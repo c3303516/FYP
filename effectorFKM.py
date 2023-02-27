@@ -1,23 +1,16 @@
-
-import autograd.numpy as np
+import jax.numpy as jnp
+from jax.numpy import pi, sin, cos, linalg
 from params import *
-from autograd.numpy import pi, cos, sin
+
+from params import *
 from homogeneousTransforms import *
 
 
 def FKM(q,s):
 
     A01 = rotx(-pi/2)@trany(-l1)@rotz(q[0])
-    print('break')
     A12 = trany(-l2)@rotz(q[1])
     A23 = trany(-l3)@rotx(pi/2)
-
-    print(A01)
-
-    A01 = A01.real
-    A12 = A12.real
-    A23 = A23.real
-
 
     A02 = A01*A12
     A03 = A02*A23
@@ -31,9 +24,6 @@ def FKM(q,s):
     s.A03 = A03
     
 
-    # FKM = np.array([(A01),(A12),(A23)])
-    # print(FKM)
-
     r030 = A03[0:3,3]
 
     a = np.sqrt(A03[2,1]*A03[2,1] + A03[2,2]*A03[2,2])
@@ -41,8 +31,8 @@ def FKM(q,s):
     theta = np.arctan2(-A03[2,0], a)
     phi = np.arctan2(A03[2,1],A03[2,2])
 
-    xe = np.matrix([[r030], [phi], [theta], [psi]], dtype=object)
-    return xe
+    s.xe = np.matrix([[r030], [phi], [theta], [psi]], dtype=object)
+    return s
 
 
 
