@@ -1,9 +1,16 @@
 # from params import *
 # from homogeneousTransforms import *
+from jax.config import config
+config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
-from dynamics import gravTorque
+from effectorFKM import FKM
+from massMatrix import massMatrix
+from dynamics import  gravTorque
+from rk4 import rk4
+
+import matplotlib.pyplot as plt
 
 class self:
     def __init___(self):
@@ -136,52 +143,15 @@ def hatSE3(x):
     ])
     return S
 
-def massMatrix(q0):
+def massMatrix_continuous(q0):
     q1 = q0.at[0].get()
     q2 = q0.at[1].get()
 
     A01 = rotx(-pi/2)@trany(-l1)@rotz(q1)
     A12 = trany(-l2)@rotz(q2)
     A23 = trany(-l3)@rotx(pi/2)
-    # print(A01)
-    
-    # A01 = jnp.cos(jnp.array([[q1, pi/2, pi/2, pi/2],
-    #                [pi/2, q1, pi/2, pi/2],
-    #                [pi/2, pi/2, pi/2, pi/2],
-    #                [pi/2, pi/2, pi/2, pi/2]])) + jnp.sin(jnp.array([[0, -q1, 0., 0.],
-    #                [q1, 0., 0., 0.],
-    #                [0., 0., 0., 0.],
-    #                [0., 0., 0., 0.]])) + jnp.array([[0., 0., 0., 0.],
-    #                [0., 0, 0., 0.],
-    #                [0., 0., 1., 0.],
-    #                [0., 0., 0., 1.]])
-
-    # print('alt')
-    # A12 = jnp.cos(jnp.array([[q2, pi/2, pi/2, pi/2],
-    #                [pi/2, q2, pi/2, pi/2],
-    #                [pi/2, pi/2, pi/2, pi/2],
-    #                [pi/2, pi/2, pi/2, pi/2]])) + jnp.sin(jnp.array([[0, -q2, 0., 0.],
-    #                [q2, 0., 0., 0.],
-    #                [0., 0., 0., 0.],
-    #                [0., 0., 0., 0.]])) + jnp.array([[0., 0., 0., 0.],
-    #                [0., 0, 0., 0.],
-    #                [0., 0., 1., 0.],
-    #                [0., 0., 0., 1.]])
-    # A23 = trany(-l3)@jnp.cos(jnp.array([[pi/2, pi/2, pi/2, pi/2],
-    #                [pi/2, pi/2, pi/2, pi/2],
-    #                [pi/2, pi/2, pi/2, pi/2],
-    #                [pi/2, pi/2, pi/2, pi/2]])) + jnp.sin(jnp.array([[0, 0., 0., 0.],
-    #                [0., 0., -pi/2, 0.],
-    #                [0., pi/2, 0., 0.],
-    #                [0., 0., 0., 0.]])) + jnp.array([[1., 0., 0., 0.],
-    #                [0., 0, 0., 0.],
-    #                [0., 0., 0., 0.],
-    #                [0., 0., 0., 1.]])
-   
-
     A02 = A01@A12
     A03 = A02@A23
-
 
     # Geometric Jacobians
     R01 = A01[0:3,0:3]     #rotation matrices
@@ -214,8 +184,6 @@ def massMatrix(q0):
         [z01,               z02]
         ])
 
-
-
     # Mass Matrix
     R02 = A02[0:3,0:3]
     R03 = A03[0:3,0:3]
@@ -233,10 +201,8 @@ def massMatrix(q0):
     return Mq
     
 def MqPrime(q0):
-    # q0 = jnp.array([[q1],[q2]])
-    Mq = massMatrix(q0)
-    # Mq =jnp.ravel(massMatrix(q0), order= 'F')
-    # Mq = jnp.reshape(massMatrix(q1,q2),(4,1), order='F')
+
+    Mq = massMatrix_continuous(q0)
     Mprime = jnp.zeros([Mq.size])
     Mprime = Mprime.at[0:2].set(Mq.at[0:2,0].get())
     Mprime = Mprime.at[2:4].set(Mq.at[0:2,1].get())
@@ -244,6 +210,7 @@ def MqPrime(q0):
 
 
 def unravel(dMdq, s):
+    # could probably generalise this for any array
     (m,n) = jnp.shape(dMdq)
     dMdq1 = jnp.zeros((2,2))
     dMdq2 = jnp.zeros((2,2))
@@ -259,6 +226,7 @@ def unravel(dMdq, s):
     return s
 
 def Vq(q):
+    #Function has to do FKM again to enable autograd to work
     q1 = q.at[0].get()
     q2 = q.at[1].get()
 
@@ -278,84 +246,39 @@ def Vq(q):
     gprime = jnp.transpose(g0)
     
     V = -m1*gprime@rc100 -m2*gprime@rc200 -m3*gprime@rc300
+    s.V = V
     return V.at[0].get()
 
-def dynamics(q, p, Mq, s):
-    q1 = q.at[0].get()
-    q2 = q.at[1].get()
 
-    A01 = rotx(-pi/2)@trany(-l1)@rotz(q1)
-    A12 = trany(-l2)@rotz(q2)
-    A23 = trany(-l3)@rotx(pi/2)
-
-    A02 = A01@A12
-    A03 = A02@A23
-
-    # Geometric Jacobians
-    R01 = A01[0:3,0:3]     #rotation matrices
-    R12 = A12[0:3,0:3]
-
-    A0c1 = rotx(-pi/2)@trany(-c1)@rotz(q1)
-    A0c2 = A01@trany(-c2)@rotz(q2)
-    A0c3 = A02@trany(-c3)@rotx(pi/2)
-
-    r100   = A01[0:3,[3]]
-    r200   = A02[0:3,[3]]
-
-    rc100   = A0c1[0:3,[3]]
-    rc200   = A0c2[0:3,[3]]
-    rc300   = A0c3[0:3,[3]]
-
-    z00 = jnp.array([[0.], [0.], [1.]])
-    z01 = R01@z00
-    z02 = R01@R12@z00
-
-    ske1 = skew(z01)
-    ske2 = skew(z02)
-
-    Jc2   = jnp.block([
-        [ske1@(rc200-r100), jnp.zeros((3,1))],
-        [z01,               jnp.zeros((3,1))]
+def dynamics(x, s):
+    q1 = x.at[(0,0)].get()
+    q2 = x.at[(1,0)].get()
+    q = jnp.array([
+        q1, q2
+    ])
+    p = jnp.array([
+        x.at[(2,0)].get(), x.at[(3,0)].get()
         ])
-    Jc3   = jnp.block([
-        [ske1@(rc300-r100), ske2@(rc300-r200)],
-        [z01,               z02]
-        ])
+    # print('q1',q1)
+    # print('q2',q2)
+    # print('p',p)
+    # print('q',q)
 
-    s.Jc2 = Jc2
-    s.Jc3 = Jc3
-    #end effector pose
-    r030 = A03[0:3,[3]]
+    FKM(q1,q2,s)
 
-    a = jnp.sqrt(A03[2,1]*A03[2,1] + A03[2,2]*A03[2,2])
-    psi  = jnp.arctan2(A03[1,0],A03[0,0])
-    theta = jnp.arctan2(-A03[2,0], a)
-    phi = jnp.arctan2(A03[2,1],A03[2,2])
-
-    s.xe = jnp.block([[r030], [phi], [theta], [psi]])
-
+    massMatrix(q, s)
     # Gravitation torque
 
     s.g0 = jnp.array([[0],[0],[-g]])
     g0 = s.g0
-    # tauc2 = jnp.block([
-    #     [jnp.multiply(m2,g0)],
-    #     [jnp.zeros((3,1))]
-    # ])
-    # tauc3 = jnp.block([
-    #     [jnp.multiply(m3,g0)],
-    #     [jnp.zeros((3,1))]
-    # ])
-
-    # gq = jnp.transpose(-((jnp.transpose(tauc2))@Jc2 + (jnp.transpose(tauc3))@Jc3))
-
-    gq = gravTorque(q,s)
+    gq = gravTorque(s)
     s.gq = gq
-    dVdq = dV(q)
+    dVdq = s.dV(q)
     dVdq1 = dVdq.at[0].get()
     dVdq2 = dVdq.at[1].get()
 
     # Mass matrix inverse
+    Mq = s.Mq
     dMdq1 = s.dMdq1
     dMdq2 = s.dMdq2
     b = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq1)))
@@ -370,60 +293,121 @@ def dynamics(q, p, Mq, s):
         [jnp.transpose(p)@dMinvdq2@p],
     ])) + jnp.array([[dVdq1], [dVdq2]])    # addition now works and gives same shape, however numerical values are incorrect
 
-    print('dHdq', dHdq)
+    # print('dHdq', dHdq)
 
     dHdp = 0.5*jnp.block([
     [(jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[1.],[0.]]))) + (jnp.array([1.,0.])@linalg.solve(s.Mq,p))],
     [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[1.]])) + jnp.array([0.,1.])@linalg.solve(s.Mq,p)],
-    ])      #should be multiplied by 0.5
+    ]) 
 
-    print('dHdp', dHdp)
+    # print('dHdp', dHdp)
     D = 0.5*jnp.eye(2)
     xdot = jnp.block([
         [jnp.zeros((2,2)), jnp.eye(2)],
         [-jnp.eye(2),      -D ],
     ])@jnp.block([[dHdq],[dHdp]])
 
-    
-    return xdot, s
+    return xdot
+
+def ode_solve(xt, dt, m, s):
+    # x_step = jnp.zeros(m,1)
+    x_step = xt
+    substep = dt/m
+    for i in range(m):
+        x_step = rk4(x_step,substep,dynamics,s)
+        # print('xstep', x_step)
+    return x_step, s
+
+
+## MAIN CODE STARTS HERE
 
 q1 = 0.1
-q2 = 0.1
+q2 = 0.2
 # p0 = jnp.matrix([[0],[0]])
 # q0 = jnp.array([[q1],[q2]])
 q0 = jnp.array([q1,q2])
 
 p0 = jnp.array([-1.0,0.1])
 
+x0 = jnp.block([[q0,p0]])
+x0 = jnp.transpose(x0)
+print('x0',x0)
+
 s = self()
 
-Mq = massMatrix(q0)
-s.Mq = Mq
+# Mq = massMatrix(q0)
+# s.Mq = Mq
 
-# result = massMatrix(q1,q2)
-print(Mq)
-MqPrime(q0)
-# dMq(q1,q2)
+# # result = massMatrix(q1,q2)
+# print(Mq)
+# MqPrime(q0)
+
 massMatrixJac = jacfwd(MqPrime)
-
-dMdq = massMatrixJac(q0)
-
-unravel(dMdq, s)
-
-
-
-# dMinvdq1 = -s.Mq\dMqdq1/s.Mq;
+# dMdq = massMatrixJac(q0)
+# unravel(dMdq, s)
 V = Vq(q0)
-s.V = V
-print('V', V)
+print('V',V)
+s.dV = jacfwd(Vq)
 
-dV = jacfwd(Vq)
-# dVdq = dV(q0)
-print(dV(q0))
-# print(dVdq)
-xdot, s= dynamics(q0, p0, Mq, s)
+# xdot = dynamics(x0, s)
 
-print('gq', s.gq)
-print('xe', s.xe)
+# print('xdot', xdot)
 
-print('xdot', xdot)
+# xt1 = ode_solve(x0,0.01, 7, s)
+
+# print('xt1', xt1)
+
+## SIMULATION/PLOT
+(m,n) = x0.shape
+
+
+dt = 0.01
+
+substeps = 3
+T = 0.3
+
+t = jnp.arange(0,T,dt)
+l = t.size
+
+# print('t',t)
+xHist = jnp.zeros((m,l))
+print(xHist)
+print(x0)
+
+xHist = xHist.at[:,[0]].set(x0)
+xeHist = jnp.zeros((6,l))
+
+
+
+# for k in range(l):
+#     x = xHist.at[:,[k]].get()
+#     q = jnp.array([x.at[(0,0)].get(),
+#                     x.at[(1,0)].get()])
+#     p = jnp.array([x.at[(2,0)].get(),
+#                     x.at[(3,0)].get()])
+
+#     dMdq = massMatrixJac(q)
+#     unravel(dMdq, s)
+#     # V = Vq(q)
+#     xtemp, s = ode_solve(x,dt, substeps, s)
+#     # print(xtemp)
+#     xHist = xHist.at[:,[k+1]].set(xtemp)
+#     xeHist = xeHist.at[:,[k]].set(s.xe)
+    
+
+print('xHist',xHist)    
+print('xeHist',xeHist)
+
+fig, ax = plt.subplots(4,1)
+# ax = fig.subplots()
+ax[0].plot(t, xHist.at[0,:].get())
+
+ax[1].plot(t, xHist.at[1,:].get())
+
+ax[2].plot(t, xHist.at[2,:].get())
+
+ax[3].plot(t, xHist.at[3,:].get())
+fig.savefig('test.png')
+
+
+ax = plt.figure().add_subplot(projection = '3d')
