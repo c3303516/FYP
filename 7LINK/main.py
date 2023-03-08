@@ -4,11 +4,13 @@ config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
-from effectorFKM import FKM
+from effectorFKM import FKM, endEffector
 from massMatrix import massMatrix
-from dynamics import  gravTorque
+# from dynamics import  gravTorque
+from dynamics import dynamics_test
 from rk4 import rk4
 from params import robotParams
+from copy import deepcopy
 
 import matplotlib.pyplot as plt
 
@@ -422,7 +424,7 @@ def unravel(dMdq, s):
     
     return s
 
-def Vq(q):
+def Vq(q,s):
     #Function has to do FKM again to enable autograd to work
     q1 = q.at[0].get()
     q2 = q.at[1].get()
@@ -531,7 +533,7 @@ def Vq(q):
     return V.at[0].get()
 
 
-def dynamics(x, s):
+# def dynamics(x, s):
     q1 = x.at[(0,0)].get()
     q2 = x.at[(1,0)].get()
     q3 = x.at[(2,0)].get()
@@ -643,9 +645,9 @@ def ode_solve(xt, dt, m, s):
     x_step = xt
     substep = dt/m
     for i in range(m):
-        x_step = rk4(x_step,substep,dynamics,s)
+        x_step= rk4(x_step,substep,dynamics_test,s)
         # print('xstep', x_step)
-    return x_step, s
+    return x_step
 
 
 ## MAIN CODE STARTS HERE
@@ -677,7 +679,6 @@ x0 = jnp.transpose(x0)
 # print('x0',x0)
 
 s = self()
-
 s = robotParams(s)
 
 # Mq = massMatrix_continuous(q0)
@@ -694,20 +695,23 @@ dMdq = massMatrixJac(q0)
 print('size dMdq', jnp.shape(dMdq))
 unravel(dMdq, s)
 # print('dMdq', dMdq)
-V = Vq(q0)
-print('V', V)
-s.dV = jacfwd(Vq)
+# V = Vq(q0)
+# print('V', V)
+s.dV = jacfwd(Vq, argnums= 0)
 # print('dV', s.dV(q0))
 
-xdot = dynamics(x0, s)
-print('xdot', xdot)
+# xdot = dynamics(x0, s)
+# print('xdot', xdot)
 
 # SIMULATION/PLOT
 (m,n) = x0.shape
 
 dt = 0.01
-substeps = 10
-T = 0.1
+substeps = 15
+T = 2
+
+s.controlActive = 0     #CONTROL
+s.gravityCompensation = 1       #1 HAS GRAVITY COMP
 
 t = jnp.arange(0,T,dt)
 l = t.size
@@ -721,28 +725,29 @@ xeHist = jnp.zeros((6,l))
 
 for k in range(l):
     x = xHist.at[:,[k]].get()
-    q = jnp.array([x.at[(0,0)].get(),
-                    x.at[(1,0)].get(),
-                    x.at[(2,0)].get(),
-                    x.at[(3,0)].get(),
-                    x.at[(4,0)].get(),
-                    x.at[(5,0)].get(),
-                    x.at[(6,0)].get()])
-    p = jnp.array([x.at[(7,0)].get(),
-                    x.at[(8,0)].get(),
-                    x.at[(9,0)].get(),
-                    x.at[(10,0)].get(),
-                    x.at[(11,0)].get(),
-                    x.at[(12,0)].get(),
-                    x.at[(13,0)].get()])
+    q = jnp.array([x.at[0,0].get(),
+                   x.at[1,0].get(),
+                   x.at[2,0].get(),
+                   x.at[3,0].get(),
+                   x.at[4,0].get(),
+                   x.at[5,0].get(),
+                   x.at[6,0].get()])
+    p = jnp.array([x.at[7,0].get(),
+                   x.at[8,0].get(),
+                   x.at[9,0].get(),
+                   x.at[10,0].get(),
+                   x.at[11,0].get(),
+                   x.at[12,0].get(),
+                   x.at[13,0].get()])
 
     dMdq = massMatrixJac(q)
     unravel(dMdq, s)
     # V = Vq(q)
-    xtemp, s = ode_solve(x,dt, substeps, s)
+    xtemp = ode_solve(x,dt, substeps, s)     #try dormand prince. RK4 isn't good enough
     # print(xtemp)
     xHist = xHist.at[:,[k+1]].set(xtemp)
-    xeHist = xeHist.at[:,[k]].set(s.xe)
+    xeHist = xeHist.at[:,[k]].set(endEffector(xtemp,s))
+    # xeHist = xeHist.at[:,[k]].set(s.xe)
     
 
 print('xHist',xHist)    
@@ -765,5 +770,13 @@ ax[5].plot(t, xHist.at[5,:].get())
 ax[6].plot(t, xHist.at[6,:].get())
 fig.savefig('test_7.png')
 
+
+fig, ax = plt.subplots(3,1)
+ax[0].plot(t, xeHist.at[0,:].get())
+
+ax[1].plot(t, xeHist.at[1,:].get())
+
+ax[2].plot(t, xeHist.at[2,:].get())
+fig.savefig('test_7_endEffector.png')
 
 # ax = plt.figure().add_subplot(projection = '3d')

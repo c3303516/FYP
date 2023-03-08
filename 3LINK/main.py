@@ -272,7 +272,8 @@ def dynamics(x, s):
     s.g0 = jnp.array([[0],[0],[-g]])
     g0 = s.g0
     gq = gravTorque(s)
-    s.gq = gq
+    s.gq = gq.at[0].get()
+    # print('gq',s.gq)
     dVdq = s.dV(q)
     dVdq1 = dVdq.at[0].get()
     dVdq2 = dVdq.at[1].get()
@@ -305,7 +306,9 @@ def dynamics(x, s):
     xdot = jnp.block([
         [jnp.zeros((2,2)), jnp.eye(2)],
         [-jnp.eye(2),      -D ],
-    ])@jnp.block([[dHdq],[dHdp]])
+    ])@jnp.block([[dHdq],[dHdp]]) + jnp.block([[jnp.zeros((2,1))],[gq]])
+
+    # +  [zeros(2,1);(u)]   #need to implement this grav torque control action
 
     return xdot
 
@@ -364,7 +367,7 @@ s.dV = jacfwd(Vq)
 dt = 0.01
 
 substeps = 3
-T = 0.3
+T = 5
 
 t = jnp.arange(0,T,dt)
 l = t.size
@@ -379,20 +382,20 @@ xeHist = jnp.zeros((6,l))
 
 
 
-# for k in range(l):
-#     x = xHist.at[:,[k]].get()
-#     q = jnp.array([x.at[(0,0)].get(),
-#                     x.at[(1,0)].get()])
-#     p = jnp.array([x.at[(2,0)].get(),
-#                     x.at[(3,0)].get()])
+for k in range(l):
+    x = xHist.at[:,[k]].get()
+    q = jnp.array([x.at[0,0].get(),
+                   x.at[1,0].get()])
+    p = jnp.array([x.at[2,0].get(),
+                   x.at[3,0].get()])
 
-#     dMdq = massMatrixJac(q)
-#     unravel(dMdq, s)
-#     # V = Vq(q)
-#     xtemp, s = ode_solve(x,dt, substeps, s)
-#     # print(xtemp)
-#     xHist = xHist.at[:,[k+1]].set(xtemp)
-#     xeHist = xeHist.at[:,[k]].set(s.xe)
+    dMdq = massMatrixJac(q)
+    unravel(dMdq, s)
+    # V = Vq(q)
+    xtemp, s = ode_solve(x,dt, substeps, s)
+    # print(xtemp)
+    xHist = xHist.at[:,[k+1]].set(xtemp)
+    xeHist = xeHist.at[:,[k]].set(s.xe)
     
 
 print('xHist',xHist)    
@@ -410,4 +413,4 @@ ax[3].plot(t, xHist.at[3,:].get())
 fig.savefig('test.png')
 
 
-ax = plt.figure().add_subplot(projection = '3d')
+# ax = plt.figure().add_subplot(projection = '3d')
