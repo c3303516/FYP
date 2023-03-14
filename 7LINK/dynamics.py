@@ -7,8 +7,9 @@ from params import *
 from massMatrix import massMatrix
 from effectorFKM import FKM
 from copy import deepcopy
+import csv
 
-@partial(jax.jit, static_argnames=['s'])
+# @partial(jax.jit, static_argnames=['s'])
 def dynamics_test(x, s):
     q1 = x.at[(0,0)].get()
     q2 = x.at[(1,0)].get()
@@ -36,6 +37,8 @@ def dynamics_test(x, s):
     # print('q2',q2)
     # print('p',p)
     # print('q',q)
+    p = jnp.transpose(p)
+    q = jnp.transpose(q)
 
     s = FKM(q,deepcopy(s))
 
@@ -72,13 +75,57 @@ def dynamics_test(x, s):
     temp6 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq6)))
     temp7 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq7)))
     
-    dMinvdq1 = linalg.solve(-Mq, temp1)
-    dMinvdq2 = linalg.solve(-Mq, temp2)
-    dMinvdq3 = linalg.solve(-Mq, temp3)
-    dMinvdq4 = linalg.solve(-Mq, temp4)
-    dMinvdq5 = linalg.solve(-Mq, temp5)
-    dMinvdq6 = linalg.solve(-Mq, temp6)
-    dMinvdq7 = linalg.solve(-Mq, temp7)
+    dMinvdq1 = -linalg.solve(Mq, temp1)     #m1 and 2 ae messed up for some reason.
+    dMinvdq2 = -linalg.solve(Mq, temp2)
+    dMinvdq3 = -linalg.solve(Mq, temp3)
+    dMinvdq4 = -linalg.solve(Mq, temp4)
+    dMinvdq5 = -linalg.solve(Mq, temp5)
+    dMinvdq6 = -linalg.solve(Mq, temp6)
+    dMinvdq7 = -linalg.solve(Mq, temp7)
+
+
+    jnp.set_printoptions(precision=15)
+    print('Temp1',temp1)
+    print('temp2',temp2)
+
+    print('dMdq1',dMdq1)
+    print('dMdq2',dMdq2)
+    # print('dMdq3',dMdq3)
+    # print('dMdq4',dMdq4)
+    # print('dMdq5',dMdq5)
+    # print('dMdq6',dMdq6)
+    # print('dMdq7',dMdq7)
+    print('dMinvdq1',dMinvdq1)
+    print('dMinvdq2',dMinvdq2)
+    # print('dMinvdq3',dMinvdq3)
+    # print('dMinvdq4',dMinvdq4)
+    # print('dMinvdq5',dMinvdq5)
+    # print('dMinvdq6',dMinvdq6)
+    # print('dMinvdq7',dMinvdq7)
+
+    # with open('/root/FYP/7LINK/M_data', 'w', newline='') as f:
+
+    #     writer = csv.writer(f)
+
+    #     data = [
+    #             ['dMdq1:', dMdq1],
+    #             ['dMdq2:', dMdq2],
+    #             ['dMdq3:', dMdq3],
+    #             ['dMdq4:', dMdq4],
+    #             ['dMdq5:', dMdq5],
+    #             ['dMdq6:', dMdq6],
+    #             ['dMdq7:', dMdq7],
+    #             ['dMinvdq1',dMinvdq1],
+    #             ['dMinvdq2',dMinvdq2],
+    #             ['dMinvdq3',dMinvdq3],
+    #             ['dMinvdq4',dMinvdq4],
+    #             ['dMinvdq5',dMinvdq5],
+    #             ['dMinvdq6',dMinvdq6],
+    #             ['dMinvdq7',dMinvdq7],
+    #     ]
+            
+    #     writer.writerows(data)
+
 
 
     # print('dVdq', jnp.transpose(dVdq))
@@ -106,11 +153,16 @@ def dynamics_test(x, s):
 
     # print('dHdp', dHdp)
 
-    tau = inputTorque(q,s)
-    D = 0.5*jnp.eye(7)
+    if s.gravityCompensation == 1:
+        gq = gravTorque(s)
+    else:
+        gq = jnp.zeros((7,1))
+
+    tau = inputTorque(q,gq,s)
+    D = 1*jnp.eye(7)
     xdot = jnp.block([
         [jnp.zeros((7,7)), jnp.eye(7)],
-        [-jnp.eye(7),      -D ],
+        [-jnp.eye(7),      -D ]
     ])@jnp.block([[dHdq],[dHdp]])  + tau     #CHECK YOU ACTUALLY PUT THE GRAVITY IN 
 
     # print('xdot', xdot)
@@ -160,17 +212,12 @@ def gravTorque(s):
     gq = jnp.transpose(-((jnp.transpose(tauc2))@Jc2 + (jnp.transpose(tauc3))@Jc3 + (jnp.transpose(tauc4))@Jc4 + (jnp.transpose(tauc5))@Jc5 + (jnp.transpose(tauc6))@Jc6 + (jnp.transpose(tauc7))@Jc7 + (jnp.transpose(tauc8))@Jc8))
     return gq
 
-def inputTorque(q,s):
+def inputTorque(q,gq, s):
 
     # gq = gravTorque(s)
 
     if s.controlActive == 0:
         controlAction = jnp.zeros((7,1))
-    
-    if s.gravityCompensation == 1:
-        gq = gravTorque(s)
-    else:
-        gq = jnp.zeros((7,1))
         
     u = controlAction + gq
 

@@ -61,12 +61,13 @@ def FKM(q,s):
     theta = jnp.arctan2(-A0E[2,0], a)
     phi = jnp.arctan2(A0E[2,1],A0E[2,2])
 
-    # s.xe = jnp.block([[r0E0], [phi], [theta], [psi]])       # Shouldn't output this here - compute from x data afterwards
+    s.xe = jnp.block([[r0E0], [phi], [theta], [psi]])       # Shouldn't output this here - compute from x data afterwards
     return s
 
 
 
 def endEffector(q,s):
+    
     q1 = q.at[0].get()
     q2 = q.at[1].get()
     q3 = q.at[2].get()

@@ -7,9 +7,9 @@ from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
 from effectorFKM import FKM
 from massMatrix import massMatrix
-from dynamics import  gravTorque
+from dynamics import  dynamics_test, gravTorque
 from rk4 import rk4
-
+import csv
 import matplotlib.pyplot as plt
 
 class self:
@@ -317,44 +317,49 @@ def ode_solve(xt, dt, m, s):
     x_step = xt
     substep = dt/m
     for i in range(m):
-        x_step = rk4(x_step,substep,dynamics,s)
+        x_step = rk4(x_step,substep,dynamics_test,s)
         # print('xstep', x_step)
-    return x_step, s
+    return x_step
 
 
 ## MAIN CODE STARTS HERE
 
-q1 = 0.1
-q2 = 0.2
-# p0 = jnp.matrix([[0],[0]])
+q1 = -0.4
+q2 = 0.4
+# p0 = jnp.array([0,0])
 # q0 = jnp.array([[q1],[q2]])
 q0 = jnp.array([q1,q2])
 
-p0 = jnp.array([-1.0,0.1])
+p0 = jnp.array([1.0,1.0])
 
 x0 = jnp.block([[q0,p0]])
 x0 = jnp.transpose(x0)
 print('x0',x0)
 
 s = self()
-
-# Mq = massMatrix(q0)
+s = FKM(q0,s)
+Mq = massMatrix(q0,s)
 # s.Mq = Mq
 
 # # result = massMatrix(q1,q2)
-# print(Mq)
+jnp.set_printoptions(precision=15)
+print(Mq)
 # MqPrime(q0)
 
 massMatrixJac = jacfwd(MqPrime)
-# dMdq = massMatrixJac(q0)
-# unravel(dMdq, s)
+dMdq = massMatrixJac(q0)
+unravel(dMdq, s)
 V = Vq(q0)
 print('V',V)
 s.dV = jacfwd(Vq)
+print('dV', s.dV(q0))
+xdot = dynamics_test(x0, s)
+hmm = xdot.at[0,0].get()
 
-# xdot = dynamics(x0, s)
+print('xdot', xdot)
+print('type', type(hmm))
 
-# print('xdot', xdot)
+# print(fake)
 
 # xt1 = ode_solve(x0,0.01, 7, s)
 
@@ -365,7 +370,6 @@ s.dV = jacfwd(Vq)
 
 
 dt = 0.01
-
 substeps = 3
 T = 5
 
@@ -374,12 +378,11 @@ l = t.size
 
 # print('t',t)
 xHist = jnp.zeros((m,l))
-print(xHist)
-print(x0)
+# print(xHist)
+# print(x0)
 
 xHist = xHist.at[:,[0]].set(x0)
 xeHist = jnp.zeros((6,l))
-
 
 
 for k in range(l):
@@ -392,25 +395,48 @@ for k in range(l):
     dMdq = massMatrixJac(q)
     unravel(dMdq, s)
     # V = Vq(q)
-    xtemp, s = ode_solve(x,dt, substeps, s)
+    xtemp = ode_solve(x,dt, substeps, s)
     # print(xtemp)
     xHist = xHist.at[:,[k+1]].set(xtemp)
-    xeHist = xeHist.at[:,[k]].set(s.xe)
+    # xeHist = xeHist.at[:,[k]].set(s.xe)
     
 
 print('xHist',xHist)    
-print('xeHist',xeHist)
+# print('xeHist',xeHist)
 
-fig, ax = plt.subplots(4,1)
-# ax = fig.subplots()
-ax[0].plot(t, xHist.at[0,:].get())
+#outputting to csv file
 
-ax[1].plot(t, xHist.at[1,:].get())
+details = [ 'dT', dt, 'Substep Number', substeps]
+header = ['Time', 'State History']
+with open('/root/FYP/3LINK/gravcomp_initialP', 'w', newline='') as f:
 
-ax[2].plot(t, xHist.at[2,:].get())
+    writer = csv.writer(f)
+    writer.writerow(details)
+    writer.writerow(header)
 
-ax[3].plot(t, xHist.at[3,:].get())
-fig.savefig('test.png')
+    # writer.writerow(['Time', t])
+    for i in range(l):
+        q1 = xHist.at[0,i].get()
+        q2 = xHist.at[1,i].get()
+        p1 = xHist.at[2,i].get()
+        p2 = xHist.at[3,i].get()
+
+        timestamp = t.at[i].get()
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,p1,p2]
+        # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
+        
+        writer.writerow(data)
+
+# fig, ax = plt.subplots(4,1)
+# # ax = fig.subplots()
+# ax[0].plot(t, xHist.at[0,:].get())
+
+# ax[1].plot(t, xHist.at[1,:].get())
+
+# ax[2].plot(t, xHist.at[2,:].get())
+
+# ax[3].plot(t, xHist.at[3,:].get())
+# fig.savefig('test.png')
 
 
-# ax = plt.figure().add_subplot(projection = '3d')
+# # ax = plt.figure().add_subplot(projection = '3d')

@@ -3,10 +3,12 @@ from jax.numpy import pi, sin, cos, linalg
 
 from params import *
 from homogeneousTransforms import *
+from jax.config import config
+config.update("jax_enable_x64", True)
 
-def massMatrix(q0, s):
-    q1 = q0.at[0].get()
-    q2 = q0.at[1].get()
+def massMatrix(q, s):
+    q1 = q.at[0].get()
+    q2 = q.at[1].get()
 
     # Geometric Jacobians
     R01 = s.A01[0:3,0:3]     #rotation matrices
@@ -56,7 +58,7 @@ def massMatrix(q0, s):
 
     Mq = M2 + M3
     s.Mq = Mq
-    return Mq
+    return Mq, s
 
     
 

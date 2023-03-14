@@ -11,8 +11,11 @@ from dynamics import dynamics_test
 from rk4 import rk4
 from params import robotParams
 from copy import deepcopy
+from scipy import integrate
 
-import matplotlib.pyplot as plt
+import csv
+
+# import matplotlib.pyplot as plt
 
 class self:
     def __init___(self):
@@ -642,32 +645,35 @@ def Vq(q,s):
 
 def ode_solve(xt, dt, m, s):
     # x_step = jnp.zeros(m,1)
-    x_step = xt
+    x_nextstep = xt
     substep = dt/m
     for i in range(m):
-        x_step= rk4(x_step,substep,dynamics_test,s)
+        x_step= rk4(x_nextstep,substep,dynamics_test,s)
+        x_nextstep = x_step
         # print('xstep', x_step)
-    return x_step
+
+    x_finalstep = x_nextstep
+    return x_finalstep
 
 
 ## MAIN CODE STARTS HERE
 
-# q1 = 0.
-# q2 = 0.
-# q3 = 0.
-# q4 = 0.
-# q5 = 0.
-# q6 = 0.
-# q7 = 0.
+q1 = 0.
+q2 = pi/2.
+q3 = 0.
+q4 = 0.
+q5 = 0.
+q6 = 0.
+q7 = 0.
 
 #HOME POSITION OF BOT
-q1 = 0   
-q2 = 0.261799387799149   
-q3 = 3.141592653589793   
-q4 = 4.014257279586958                   
-q5 = 0   
-q6 = 0.959931088596881   
-q7 = 1.570796326794897
+# q1 = 0   
+# q2 = 0.261799387799149   
+# q3 = 3.141592653589793   
+# q4 = 4.014257279586958                   
+# q5 = 0   
+# q6 = 0.959931088596881   
+# q7 = 1.570796326794897
 # p0 = jnp.matrix([[0],[0]])
 # q0 = jnp.array([[q1],[q2]])
 q0 = jnp.array([q1,q2,q3,q4,q5,q6,q7])
@@ -683,33 +689,43 @@ s = robotParams(s)
 
 # Mq = massMatrix_continuous(q0)
 # print(Mq)
-# FKM(q0,s)
-# Mq = massMatrix(q0,s)
-# print(Mq)
+FKM(q0,s)
+Mq = massMatrix(q0,s)
+
+jnp.set_printoptions(precision=15)
+print('Mass Matrix',Mq)
+
+Mq_cont = massMatrix_continuous(q0)
+print('Mq_cont', Mq_cont)
 # print('size Mq', jnp.shape(Mq))
-# MqP = MqPrime(q0)
+MqP = MqPrime(q0)
 
 # print('MqPrime', MqP)
+# print('MqPrime size', jnp.size(MqP))
+
 massMatrixJac = jacfwd(MqPrime)
 dMdq = massMatrixJac(q0)
-print('size dMdq', jnp.shape(dMdq))
+# print('size dMdq', jnp.shape(dMdq))
 unravel(dMdq, s)
-# print('dMdq', dMdq)
+print('dMdq', dMdq)
 # V = Vq(q0)
 # print('V', V)
 s.dV = jacfwd(Vq, argnums= 0)
 # print('dV', s.dV(q0))
+s.controlActive = 0     #CONTROL
+s.gravityCompensation = 0       #1 HAS GRAVITY COMP
 
-# xdot = dynamics(x0, s)
-# print('xdot', xdot)
+xdot = dynamics_test(x0, s)
+print('xdot', xdot)
 
+# print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
+# print(fake)
 # SIMULATION/PLOT
 (m,n) = x0.shape
 
-dt = 0.01
-substeps = 15
-T = 2
-
+dt = 0.001
+substeps = 20
+T = 5
 s.controlActive = 0     #CONTROL
 s.gravityCompensation = 1       #1 HAS GRAVITY COMP
 
@@ -741,42 +757,83 @@ for k in range(l):
                    x.at[13,0].get()])
 
     dMdq = massMatrixJac(q)
-    unravel(dMdq, s)
+    s = unravel(dMdq, s)
     # V = Vq(q)
     xtemp = ode_solve(x,dt, substeps, s)     #try dormand prince. RK4 isn't good enough
+    # xtemp = integrate.solve_ivp(dynamics_test,(0,dt),x.at[:,0].get(),method='RK45',args=(x,s))
     # print(xtemp)
     xHist = xHist.at[:,[k+1]].set(xtemp)
-    xeHist = xeHist.at[:,[k]].set(endEffector(xtemp,s))
-    # xeHist = xeHist.at[:,[k]].set(s.xe)
+    s2 = FKM(xtemp,s)
+    # xeHist = xeHist.at[:,[k]].set(endEffector(xtemp,s))
+    xeHist = xeHist.at[:,[k]].set(s2.xe)
     
+#outputting to csv file
 
-print('xHist',xHist)    
-print('xeHist',xeHist)
+details = ['Grav Comp', s.gravityCompensation, 'dT', dt, 'Substep Number', substeps]
+header = ['Time', 'State History']
+with open('/root/FYP/7LINK/gravcomp', 'w', newline='') as f:
 
-fig, ax = plt.subplots(7,1)
-# ax = fig.subplots()
-ax[0].plot(t, xHist.at[0,:].get())
+    writer = csv.writer(f)
+    writer.writerow(details)
+    writer.writerow(header)
 
-ax[1].plot(t, xHist.at[1,:].get())
+    # writer.writerow(['Time', t])
+    for i in range(l):
+        q1 = xHist.at[0,i].get()
+        q2 = xHist.at[1,i].get()
+        q3 = xHist.at[2,i].get()
+        q4 = xHist.at[3,i].get()
+        q5 = xHist.at[4,i].get()
+        q6 = xHist.at[5,i].get()
+        q7 = xHist.at[6,i].get()
+        p1 = xHist.at[7,i].get()
+        p2 = xHist.at[8,i].get()
+        p3 = xHist.at[9,i].get()
+        p4 = xHist.at[10,i].get()
+        p5 = xHist.at[11,i].get()
+        p6 = xHist.at[12,i].get()
+        p7 = xHist.at[13,i].get()
+        timestamp = t.at[i].get()
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,p1,p2,p3,p4,p5,p6,p7]
+        # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
+        
+        writer.writerow(data)
 
-ax[2].plot(t, xHist.at[2,:].get())
+# print('xHist',xHist)    
+# print('xeHist',xeHist)
 
-ax[3].plot(t, xHist.at[3,:].get())
+def plot():
+    fig, ax = plt.subplots(7,1)
+    # ax = fig.subplots()
+    ax[0].plot(t, xHist.at[0,:].get())
 
-ax[4].plot(t, xHist.at[4,:].get())
+    ax[1].plot(t, xHist.at[1,:].get())
 
-ax[5].plot(t, xHist.at[5,:].get())
+    ax[2].plot(t, xHist.at[2,:].get())
 
-ax[6].plot(t, xHist.at[6,:].get())
-fig.savefig('test_7.png')
+    ax[3].plot(t, xHist.at[3,:].get())
+
+    ax[4].plot(t, xHist.at[4,:].get())
+
+    ax[5].plot(t, xHist.at[5,:].get())
+
+    ax[6].plot(t, xHist.at[6,:].get())
+    fig.savefig('plot_test_7.png')
 
 
-fig, ax = plt.subplots(3,1)
-ax[0].plot(t, xeHist.at[0,:].get())
+    fig, ax = plt.subplots(3,1)
+    ax[0].plot(t, xeHist.at[0,:].get())
 
-ax[1].plot(t, xeHist.at[1,:].get())
+    ax[1].plot(t, xeHist.at[1,:].get())
 
-ax[2].plot(t, xeHist.at[2,:].get())
-fig.savefig('test_7_endEffector.png')
+    ax[2].plot(t, xeHist.at[2,:].get())
+    fig.savefig('plot_test_7_endEffector.png')
 
-# ax = plt.figure().add_subplot(projection = '3d')
+
+
+    ax = plt.figure().add_subplot(projection = '3d')
+    # plt.Axes3D.plot(xeHist.at[0,0].get(),xeHist.at[1,0].get(),xeHist.at[2,0].get())
+    ax.plot(xeHist.at[0,0].get(),xeHist.at[1,0].get(),xeHist.at[2,0].get(), label='7 Link Manipulator')
+    plt.show()
+    fig.savefig('plot_test_3D_7Link')
+

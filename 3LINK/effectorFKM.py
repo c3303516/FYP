@@ -6,7 +6,9 @@ from params import *
 from homogeneousTransforms import *
 
 
-def FKM(q1,q2,s):
+def FKM(q,s):
+    q1 = q.at[0].get()
+    q2 = q.at[1].get()
 
     A01 = rotx(-pi/2)@trany(-l1)@rotz(q1)
     A12 = trany(-l2)@rotz(q2)
@@ -24,14 +26,14 @@ def FKM(q1,q2,s):
     s.A02 = A02
     s.A03 = A03
     #end effector pose
-    r030 = A03[0:3,[3]]
+    # r030 = A03[0:3,[3]]
 
-    a = jnp.sqrt(A03[2,1]*A03[2,1] + A03[2,2]*A03[2,2])
-    psi  = jnp.arctan2(A03[1,0],A03[0,0])
-    theta = jnp.arctan2(-A03[2,0], a)
-    phi = jnp.arctan2(A03[2,1],A03[2,2])
+    # a = jnp.sqrt(A03[2,1]*A03[2,1] + A03[2,2]*A03[2,2])
+    # psi  = jnp.arctan2(A03[1,0],A03[0,0])
+    # theta = jnp.arctan2(-A03[2,0], a)
+    # phi = jnp.arctan2(A03[2,1],A03[2,2])
 
-    s.xe = jnp.block([[r030], [phi], [theta], [psi]])
+    # s.xe = jnp.block([[r030], [phi], [theta], [psi]])
     return s
 
 
