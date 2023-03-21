@@ -12,6 +12,7 @@ from rk4 import rk4
 from params import robotParams
 from copy import deepcopy
 from scipy import integrate
+import sys
 
 import csv
 
@@ -643,12 +644,12 @@ def Vq(q,s):
 
     return xdot
 
-def ode_solve(xt, dt, m, s):
+def ode_solve(xt, dt, m,contA, s):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     substep = dt/m
     for i in range(m):
-        x_step= rk4(x_nextstep,substep,dynamics_test,s)
+        x_step= rk4(x_nextstep,substep,dynamics_test,contA,s)
         x_nextstep = x_step
         # print('xstep', x_step)
 
@@ -658,24 +659,24 @@ def ode_solve(xt, dt, m, s):
 
 ## MAIN CODE STARTS HERE
 
-q1 = 0.
-q2 = pi/2.
-q3 = 0.
-q4 = 0.
-q5 = 0.
-q6 = 0.
-q7 = 0.
+# q1 = 0.
+# q2 = pi/2.
+# q3 = 0.
+# q4 = 0.
+# q5 = 0.
+# q6 = 0.
+# q7 = 0.
 
 #HOME POSITION OF BOT
-# q1 = 0   
-# q2 = 0.261799387799149   
-# q3 = 3.141592653589793   
-# q4 = 4.014257279586958                   
-# q5 = 0   
-# q6 = 0.959931088596881   
-# q7 = 1.570796326794897
-# p0 = jnp.matrix([[0],[0]])
-# q0 = jnp.array([[q1],[q2]])
+q1 = 0   
+q2 = 0.261799387799149   
+q3 = 3.141592653589793   
+q4 = 4.014257279586958                   
+q5 = 0   
+q6 = 0.959931088596881   
+q7 = 1.570796326794897
+
+
 q0 = jnp.array([q1,q2,q3,q4,q5,q6,q7])
 
 p0 = jnp.array([0.,0.,0.,0.,0.,0.,0.])
@@ -686,19 +687,19 @@ x0 = jnp.transpose(x0)
 
 s = self()
 s = robotParams(s)
-
+s.pred = 0
 # Mq = massMatrix_continuous(q0)
 # print(Mq)
 FKM(q0,s)
 Mq = massMatrix(q0,s)
 
 jnp.set_printoptions(precision=15)
-print('Mass Matrix',Mq)
+# print('Mass Matrix',Mq)
 
-Mq_cont = massMatrix_continuous(q0)
-print('Mq_cont', Mq_cont)
+# Mq_cont = massMatrix_continuous(q0)
+# print('Mq_cont', Mq_cont)
 # print('size Mq', jnp.shape(Mq))
-MqP = MqPrime(q0)
+# MqP = MqPrime(q0)
 
 # print('MqPrime', MqP)
 # print('MqPrime size', jnp.size(MqP))
@@ -707,37 +708,42 @@ massMatrixJac = jacfwd(MqPrime)
 dMdq = massMatrixJac(q0)
 # print('size dMdq', jnp.shape(dMdq))
 unravel(dMdq, s)
-print('dMdq', dMdq)
+# print('dMdq', dMdq)
 # V = Vq(q0)
 # print('V', V)
 s.dV = jacfwd(Vq, argnums= 0)
 # print('dV', s.dV(q0))
 s.controlActive = 0     #CONTROL
+s.controlAction = jnp.array([[0.],[0.],[0.],[0.],[0.],[0.],[0.]])
 s.gravityCompensation = 0       #1 HAS GRAVITY COMP
+# s.time = 5
+# xdot = dynamics_test(x0, s)
+# print('xdot', xdot)
 
-xdot = dynamics_test(x0, s)
-print('xdot', xdot)
+# s.time = 0.1
+# xdot = dynamics_test(x0, s)
+# print('xdot', xdot)
 
 # print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
 # print(fake)
 # SIMULATION/PLOT
 (m,n) = x0.shape
 
-dt = 0.001
+dt = 0.0005
 substeps = 20
-T = 5
+T = .5
 s.controlActive = 0     #CONTROL
-s.gravityCompensation = 1       #1 HAS GRAVITY COMP
+s.gravityCompensation = 0       #1 HAS GRAVITY COMP
 
 t = jnp.arange(0,T,dt)
 l = t.size
 
-xHist = jnp.zeros((m,l))
+xHist = jnp.zeros((m,l+1))
 print('xHist',xHist)
 print('x0',x0)
 
 xHist = xHist.at[:,[0]].set(x0)
-xeHist = jnp.zeros((6,l))
+# xeHist = jnp.zeros((6,l))
 
 for k in range(l):
     x = xHist.at[:,[k]].get()
@@ -759,19 +765,31 @@ for k in range(l):
     dMdq = massMatrixJac(q)
     s = unravel(dMdq, s)
     # V = Vq(q)
-    xtemp = ode_solve(x,dt, substeps, s)     #try dormand prince. RK4 isn't good enough
-    # xtemp = integrate.solve_ivp(dynamics_test,(0,dt),x.at[:,0].get(),method='RK45',args=(x,s))
+    time = t.at[k].get()
+    controlAction = jnp.zeros((7,1))
+    # if time > 0.1:
+    #     if time > 0.2:
+    #         controlAction = jnp.zeros((7,1))
+    #     else:         
+    #         controlAction = jnp.array([[0.],[0.],[0.],[5.],[0.],[0.],[0.]])
+
+    # print(s.controlAction)
+    xtemp = ode_solve(x,dt, substeps,controlAction, s)     #try dormand prince. RK4 isn't good enough
+    # xtemp = integrate.solve_ivp(dynamics_test,x.at[:,0].get(),method='RK45',args=(x,controlAction,s))
     # print(xtemp)
+    if jnp.isnan(xtemp.at[0,0].get()):
+        print(xtemp.at[0,0].get())
+        sys.exit('Code is stopped cause of NAN')
     xHist = xHist.at[:,[k+1]].set(xtemp)
     s2 = FKM(xtemp,s)
     # xeHist = xeHist.at[:,[k]].set(endEffector(xtemp,s))
-    xeHist = xeHist.at[:,[k]].set(s2.xe)
+    # xeHist = xeHist.at[:,[k]].set(s2.xe)
     
 #outputting to csv file
 
 details = ['Grav Comp', s.gravityCompensation, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK/gravcomp', 'w', newline='') as f:
+with open('/root/FYP/7LINK/data/HomePosition_freeswing_uncompiled', 'w', newline='') as f:
 
     writer = csv.writer(f)
     writer.writerow(details)

@@ -357,7 +357,7 @@ xdot = dynamics_test(x0, s)
 hmm = xdot.at[0,0].get()
 
 print('xdot', xdot)
-print('type', type(hmm))
+# print('type', type(hmm))
 
 # print(fake)
 

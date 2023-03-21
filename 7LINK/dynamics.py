@@ -7,10 +7,11 @@ from params import *
 from massMatrix import massMatrix
 from effectorFKM import FKM
 from copy import deepcopy
+from jax import lax
 import csv
 
 # @partial(jax.jit, static_argnames=['s'])
-def dynamics_test(x, s):
+def dynamics_test(x,controlAction,s):
     q1 = x.at[(0,0)].get()
     q2 = x.at[(1,0)].get()
     q3 = x.at[(2,0)].get()
@@ -84,19 +85,19 @@ def dynamics_test(x, s):
     dMinvdq7 = -linalg.solve(Mq, temp7)
 
 
-    jnp.set_printoptions(precision=15)
-    print('Temp1',temp1)
-    print('temp2',temp2)
+    # jnp.set_printoptions(precision=15)
+    # print('Temp1',temp1)
+    # print('temp2',temp2)
 
-    print('dMdq1',dMdq1)
-    print('dMdq2',dMdq2)
+    # print('dMdq1',dMdq1)
+    # print('dMdq2',dMdq2)
     # print('dMdq3',dMdq3)
     # print('dMdq4',dMdq4)
     # print('dMdq5',dMdq5)
     # print('dMdq6',dMdq6)
     # print('dMdq7',dMdq7)
-    print('dMinvdq1',dMinvdq1)
-    print('dMinvdq2',dMinvdq2)
+    # print('dMinvdq1',dMinvdq1)
+    # print('dMinvdq2',dMinvdq2)
     # print('dMinvdq3',dMinvdq3)
     # print('dMinvdq4',dMinvdq4)
     # print('dMinvdq5',dMinvdq5)
@@ -153,13 +154,21 @@ def dynamics_test(x, s):
 
     # print('dHdp', dHdp)
 
-    if s.gravityCompensation == 1:
-        gq = gravTorque(s)
-    else:
-        gq = jnp.zeros((7,1))
-
-    tau = inputTorque(q,gq,s)
-    D = 1*jnp.eye(7)
+    # if s.gravityCompensation == 1:
+    # gq = gravTorque(s)
+        # print('GRAV COMPE IS ON')
+    # else:
+    gq = jnp.zeros((7,1))
+        # print('shouldnt go here')
+        
+    # jnp.set_printoptions(precision=15)
+    # t = s.time
+    # print('t',t)
+    # tau = inputTorque(q,gq,s)
+    u = controlAction + gq
+    tau = jnp.block([[jnp.zeros((7,1))],[u]])
+    # D = 0*jnp.eye(7)
+    D = jnp.zeros((7,7))
     xdot = jnp.block([
         [jnp.zeros((7,7)), jnp.eye(7)],
         [-jnp.eye(7),      -D ]
@@ -216,10 +225,17 @@ def inputTorque(q,gq, s):
 
     # gq = gravTorque(s)
 
-    if s.controlActive == 0:
-        controlAction = jnp.zeros((7,1))
-        
-    u = controlAction + gq
+    # if s.controlActive == 0:
+    # controlAction = jnp.zeros((7,1))
+ 
+    # controlAction = jnp.array([[0.],[0.],[0.],[5.],[0.],[0.],[0.]])
+        # print('cA',controlAction)
 
+    # operand = jnp.array([0.])
+    # controlAction = lax.cond(t<0, lambda x: jnp.array([[0.],[0.],[0.],[5.],[0.],[0.],[0.]]), lambda x: jnp.zeros((7,1)), operand)
+
+    u = s.controlAction + gq
+    # print('u',u,'gq',gq)
+    # u = gq
     tau = jnp.block([[jnp.zeros((7,1))],[u]])
     return tau

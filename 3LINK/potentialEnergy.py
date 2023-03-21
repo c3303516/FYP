@@ -6,7 +6,7 @@ from params import *
 
 
 def potentialEnergy(q,s):
-    V = -m1*jnp.transpose(g0)@s.rc100 -m2*jnp.transpose(g0)@s.rc200 -m3*jnp.transpose(g0)@rc300
+    V = -m1*jnp.transpose(g0)@s.rc100 -m2*jnp.transpose(g0)@s.rc200 -m3*jnp.transpose(g0)@s.rc300
 
     print('V', V)
 
