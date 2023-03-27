@@ -789,7 +789,7 @@ for k in range(l):
 
 details = ['Grav Comp', s.gravityCompensation, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK/data/HomePosition_freeswing_uncompiled', 'w', newline='') as f:
+with open('/root/FYP/7LINK/data/HomePosition_freeswing_deepcopytest', 'w', newline='') as f:
 
     writer = csv.writer(f)
     writer.writerow(details)

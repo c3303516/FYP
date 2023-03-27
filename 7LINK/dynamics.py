@@ -10,8 +10,10 @@ from copy import deepcopy
 from jax import lax
 import csv
 
-# @partial(jax.jit, static_argnames=['s'])
+@partial(jax.jit) static_argnames=['s'])
 def dynamics_test(x,controlAction,s):
+    # sprime = deepcopy(s)
+    sprime = s
     q1 = x.at[(0,0)].get()
     q2 = x.at[(1,0)].get()
     q3 = x.at[(2,0)].get()
@@ -41,14 +43,14 @@ def dynamics_test(x,controlAction,s):
     p = jnp.transpose(p)
     q = jnp.transpose(q)
 
-    s = FKM(q,deepcopy(s))
+    sprime = FKM(q,sprime)
 
-    Mq, s = massMatrix(q, deepcopy(s))
+    Mq, sprime = massMatrix(q, sprime)
     # Gravitation torque
-    s.g0 = jnp.array([[0],[0],[-s.g]])
-    g0 = s.g0
+    sprime.g0 = jnp.array([[0],[0],[-s.g]])
+    g0 = sprime.g0
     
-    dVdq = s.dV(q,s)
+    dVdq = sprime.dV(q,sprime)
     dVdq1 = dVdq.at[0].get()
     dVdq2 = dVdq.at[1].get()
     dVdq3 = dVdq.at[2].get()
@@ -60,13 +62,13 @@ def dynamics_test(x,controlAction,s):
 
     # Mass matrix inverse
     # Mq = s.Mq
-    dMdq1 = s.dMdq1
-    dMdq2 = s.dMdq2
-    dMdq3 = s.dMdq3
-    dMdq4 = s.dMdq4
-    dMdq5 = s.dMdq5
-    dMdq6 = s.dMdq6
-    dMdq7 = s.dMdq7
+    dMdq1 = sprime.dMdq1
+    dMdq2 = sprime.dMdq2
+    dMdq3 = sprime.dMdq3
+    dMdq4 = sprime.dMdq4
+    dMdq5 = sprime.dMdq5
+    dMdq6 = sprime.dMdq6
+    dMdq7 = sprime.dMdq7
 
     temp1 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq1)))
     temp2 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq2)))
@@ -143,13 +145,13 @@ def dynamics_test(x,controlAction,s):
     # print('dHdq', dHdq)
 
     dHdp = 0.5*jnp.block([
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[1.],[0.],[0.],[0.],[0.],[0.],[0.]])) + (jnp.array([1.,0.,0.,0.,0.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[1.],[0.],[0.],[0.],[0.],[0.]])) + (jnp.array([0.,1.,0.,0.,0.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[1.],[0.],[0.],[0.],[0.]])) + (jnp.array([0.,0.,1.,0.,0.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[0.],[1.],[0.],[0.],[0.]])) + (jnp.array([0.,0.,0.,1.,0.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[0.],[0.],[1.],[0.],[0.]])) + (jnp.array([0.,0.,0.,0.,1.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[0.],[0.],[0.],[1.],[0.]])) + (jnp.array([0.,0.,0.,0.,0.,1.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[0.],[0.],[0.],[0.],[1.]])) + (jnp.array([0.,0.,0.,0.,0.,0.,1.])@linalg.solve(s.Mq,p))]
+    [jnp.transpose(p)@linalg.solve(Mq,jnp.array([[1.],[0.],[0.],[0.],[0.],[0.],[0.]])) + (jnp.array([1.,0.,0.,0.,0.,0.,0.])@linalg.solve(Mq,p))],
+    [jnp.transpose(p)@linalg.solve(Mq,jnp.array([[0.],[1.],[0.],[0.],[0.],[0.],[0.]])) + (jnp.array([0.,1.,0.,0.,0.,0.,0.])@linalg.solve(Mq,p))],
+    [jnp.transpose(p)@linalg.solve(Mq,jnp.array([[0.],[0.],[1.],[0.],[0.],[0.],[0.]])) + (jnp.array([0.,0.,1.,0.,0.,0.,0.])@linalg.solve(Mq,p))],
+    [jnp.transpose(p)@linalg.solve(Mq,jnp.array([[0.],[0.],[0.],[1.],[0.],[0.],[0.]])) + (jnp.array([0.,0.,0.,1.,0.,0.,0.])@linalg.solve(Mq,p))],
+    [jnp.transpose(p)@linalg.solve(Mq,jnp.array([[0.],[0.],[0.],[0.],[1.],[0.],[0.]])) + (jnp.array([0.,0.,0.,0.,1.,0.,0.])@linalg.solve(Mq,p))],
+    [jnp.transpose(p)@linalg.solve(Mq,jnp.array([[0.],[0.],[0.],[0.],[0.],[1.],[0.]])) + (jnp.array([0.,0.,0.,0.,0.,1.,0.])@linalg.solve(Mq,p))],
+    [jnp.transpose(p)@linalg.solve(Mq,jnp.array([[0.],[0.],[0.],[0.],[0.],[0.],[1.]])) + (jnp.array([0.,0.,0.,0.,0.,0.,1.])@linalg.solve(Mq,p))]
     ]) 
 
     # print('dHdp', dHdp)
