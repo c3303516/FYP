@@ -418,15 +418,15 @@ def unravel(dMdq, s):
     # dMdq2 = dMdq2.at[0:2,1].set(dMdq.at[2:4,1].get())
     # print(dMdq2)
 
-    s.dMdq1 = dMdq1
-    s.dMdq2 = dMdq2
-    s.dMdq3 = dMdq3
-    s.dMdq4 = dMdq4
-    s.dMdq5 = dMdq5
-    s.dMdq6 = dMdq6
-    s.dMdq7 = dMdq7
-    
-    return s
+    # s.dMdq1 = dMdq1
+    # s.dMdq2 = dMdq2
+    # s.dMdq3 = dMdq3
+    # s.dMdq4 = dMdq4
+    # s.dMdq5 = dMdq5
+    # s.dMdq6 = dMdq6
+    # s.dMdq7 = dMdq7
+    #THis function has been edited to return each dMdq as another output
+    return dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7 
 
 def Vq(q,s):
     #Function has to do FKM again to enable autograd to work
@@ -644,12 +644,12 @@ def Vq(q,s):
 
     return xdot
 
-def ode_solve(xt, dt, m,contA, s):
+def ode_solve(xt,dMdq_block,dVdq, dt, m,contA, s):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     substep = dt/m
     for i in range(m):
-        x_step= rk4(x_nextstep,substep,dynamics_test,contA,s)
+        x_step= rk4(x_nextstep,substep,dynamics_test,contA,dMdq_block,dVdq,s)
         x_nextstep = x_step
         # print('xstep', x_step)
 
@@ -707,11 +707,21 @@ jnp.set_printoptions(precision=15)
 massMatrixJac = jacfwd(MqPrime)
 dMdq = massMatrixJac(q0)
 # print('size dMdq', jnp.shape(dMdq))
-unravel(dMdq, s)
-# print('dMdq', dMdq)
+# unravel(dMdq, s)
+
+dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7 = unravel(dMdq, s)
+
+dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7])
+
+
+# dMdq1_extract = dMdq_block.at[0].get()
+# print('dMdq1', dMdq1)
+# print('dMdq1 extract', dMdq1_extract)
+
+# print('dMdq1 diff', dMdq1 - dMdq1_extract)
 # V = Vq(q0)
 # print('V', V)
-s.dV = jacfwd(Vq, argnums= 0)
+dV = jacfwd(Vq, argnums= 0)
 # print('dV', s.dV(q0))
 s.controlActive = 0     #CONTROL
 s.controlAction = jnp.array([[0.],[0.],[0.],[0.],[0.],[0.],[0.]])
@@ -763,18 +773,15 @@ for k in range(l):
                    x.at[13,0].get()])
 
     dMdq = massMatrixJac(q)
-    s = unravel(dMdq, s)
+    dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7 = unravel(dMdq, s)
+    
+    dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7])
     # V = Vq(q)
+    dVdq = dV(q,s)
     time = t.at[k].get()
     controlAction = jnp.zeros((7,1))
-    # if time > 0.1:
-    #     if time > 0.2:
-    #         controlAction = jnp.zeros((7,1))
-    #     else:         
-    #         controlAction = jnp.array([[0.],[0.],[0.],[5.],[0.],[0.],[0.]])
 
-    # print(s.controlAction)
-    xtemp = ode_solve(x,dt, substeps,controlAction, s)     #try dormand prince. RK4 isn't good enough
+    xtemp = ode_solve(x,dMdq_block,dVdq,dt, substeps,controlAction, s)     #try dormand prince. RK4 isn't good enough
     # xtemp = integrate.solve_ivp(dynamics_test,x.at[:,0].get(),method='RK45',args=(x,controlAction,s))
     # print(xtemp)
     if jnp.isnan(xtemp.at[0,0].get()):
@@ -782,14 +789,13 @@ for k in range(l):
         sys.exit('Code is stopped cause of NAN')
     xHist = xHist.at[:,[k+1]].set(xtemp)
     s2 = FKM(xtemp,s)
-    # xeHist = xeHist.at[:,[k]].set(endEffector(xtemp,s))
-    # xeHist = xeHist.at[:,[k]].set(s2.xe)
+
     
 #outputting to csv file
 
 details = ['Grav Comp', s.gravityCompensation, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK/data/HomePosition_freeswing_deepcopytest', 'w', newline='') as f:
+with open('/root/FYP/7LINK/data/HomePosition_structless_test', 'w', newline='') as f:
 
     writer = csv.writer(f)
     writer.writerow(details)
