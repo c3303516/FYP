@@ -376,8 +376,8 @@ def dynamics_test(t,x,dMdq,dVdq, gravComp,controlAction,s):
 
     u = controlAction + gravComp*gq         #multiply by the boolean to change
     tau = jnp.block([[jnp.zeros((7,1))],[u]])
-    D = 0.5*jnp.eye(7)
-    # D = jnp.zeros((7,7))
+    # D = 0.5*jnp.eye(7)
+    D = jnp.zeros((7,7))
     xdot = jnp.block([
         [jnp.zeros((7,7)), jnp.eye(7)],
         [-jnp.eye(7),      -D ]

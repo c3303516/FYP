@@ -115,14 +115,17 @@ def hatSE3(x):
     ])
     return S
 
-def massMatrix_continuous(q0):
-    q1 = q0.at[0].get()
-    q2 = q0.at[1].get()
-    q3 = q0.at[2].get()
-    q4 = q0.at[3].get()
-    q5 = q0.at[4].get()
-    q6 = q0.at[5].get()
-    q7 = q0.at[6].get()
+def massMatrix_continuous(q_hat,q_constants):
+   
+    q_bold = holonomicConstraint(q_hat,q_constants)     #pass through holonomic contraints
+    q1 = q_bold.at[0].get()
+    q3 = q_bold.at[1].get()
+    q5 = q_bold.at[2].get()
+    q7 = q_bold.at[3].get()
+
+    q2 = q_hat.at[0].get()
+    q4 = q_hat.at[1].get()
+    q6 = q_hat.at[2].get()
 
     A01 = tranz(s.l1)@rotx(pi)@rotz(q1)          
     A12 = rotx(pi/2)@tranz(-s.d1)@trany(-s.l2)@rotz(q2)
@@ -306,14 +309,6 @@ def massMatrix_continuous(q0):
     # print('Jc8', Jc8)
     # print('JcG', JcG)
 
-    # s.Jc2 = Jc2
-    # s.Jc3 = Jc3
-    # s.Jc4 = Jc4
-    # s.Jc5 = Jc5
-    # s.Jc6 = Jc6
-    # s.Jc7 = Jc7
-    # s.Jc8 = Jc8
-    # s.JcG = JcG
     # Mass Matrix
     R02 = A02[0:3,0:3]
     R03 = A03[0:3,0:3]
@@ -368,39 +363,44 @@ def massMatrix_continuous(q0):
     # ])@JcG
 
     Mq = M2 + M3 + M4 + M5 + M6 + M7 + M8# + MG
+
     return Mq
     
-def MqPrime(q0):
+def MqPrime(q_hat,constants):
 
-    Mq = massMatrix_continuous(q0)
-    Mprime = jnp.zeros([Mq.size])
-    m,n = jnp.shape(Mq)
-    # print('n', n)
-    # print('size Mq', Mq.size)
+    Mq = massMatrix_continuous(q_hat,constants)
+    A = jnp.array([
+        [0.,0.,0.],
+        [1.,0.,0.],
+        [0.,0.,0.],
+        [0.,1.,0.],
+        [0.,0.,0.],
+        [0.,0.,1.],
+        [0.,0.,0.],
+    ])
+    
+    Mq_hat = jnp.transpose(A)@Mq@A
+
+    Mprime = jnp.zeros([Mq_hat.size])
+    m,n = jnp.shape(Mq_hat)
+    # print('shape of Mq_hat: n, m', n, m)
+    # print('size Mq_hat', Mq_hat.size)
     for i in range(m):
         # print('i', i)
-        Mprime = Mprime.at[n*i:n*(i+1)].set(Mq.at[0:m,i].get())
+        Mprime = Mprime.at[n*i:n*(i+1)].set(Mq_hat.at[0:m,i].get())
         
-    # Mprime = Mprime.at[0:7].set(Mq.at[0:8,0].get())
-    # Mprime = Mprime.at[7:14].set(Mq.at[0:8,1].get())
-    # Mprime = Mprime.at[14:21].set(Mq.at[0:8,2].get())
-    # Mprime = Mprime.at[21:28].set(Mq.at[0:8,3].get())
-    # Mprime = Mprime.at[28:35].set(Mq.at[0:8,4].get())
-    # Mprime = Mprime.at[35:42].set(Mq.at[0:8,5].get())
-    # Mprime = Mprime.at[42:49].set(Mq.at[0:8,6].get())
     return Mprime
 
 def unravel(dMdq, s):
     # could probably generalise this for any array
     (m,n) = jnp.shape(dMdq)
-    # print('m,n',m,n)
     dMdq1 = jnp.zeros((n,n))
     dMdq2 = jnp.zeros((n,n))
     dMdq3 = jnp.zeros((n,n))
-    dMdq4 = jnp.zeros((n,n))
-    dMdq5 = jnp.zeros((n,n))
-    dMdq6 = jnp.zeros((n,n))
-    dMdq7 = jnp.zeros((n,n))
+    # dMdq4 = jnp.zeros((n,n))
+    # dMdq5 = jnp.zeros((n,n))
+    # dMdq6 = jnp.zeros((n,n))
+    # dMdq7 = jnp.zeros((n,n))
 
 
     for i in range(n):
@@ -409,34 +409,29 @@ def unravel(dMdq, s):
         dMdq1 = dMdq1.at[0:n,i].set(dMdq.at[n*i:n*(i+1),0].get())
         dMdq2 = dMdq2.at[0:n,i].set(dMdq.at[n*i:n*(i+1),1].get())
         dMdq3 = dMdq3.at[0:n,i].set(dMdq.at[n*i:n*(i+1),2].get())
-        dMdq4 = dMdq4.at[0:n,i].set(dMdq.at[n*i:n*(i+1),3].get())
-        dMdq5 = dMdq5.at[0:n,i].set(dMdq.at[n*i:n*(i+1),4].get())
-        dMdq6 = dMdq6.at[0:n,i].set(dMdq.at[n*i:n*(i+1),5].get())
-        dMdq7 = dMdq7.at[0:n,i].set(dMdq.at[n*i:n*(i+1),6].get())
+        # dMdq4 = dMdq4.at[0:n,i].set(dMdq.at[n*i:n*(i+1),3].get())
+        # dMdq5 = dMdq5.at[0:n,i].set(dMdq.at[n*i:n*(i+1),4].get())
+        # dMdq6 = dMdq6.at[0:n,i].set(dMdq.at[n*i:n*(i+1),5].get())
+        # dMdq7 = dMdq7.at[0:n,i].set(dMdq.at[n*i:n*(i+1),6].get())
     # print(dMdq1)
     # dMdq2 = dMdq2.at[0:2,0].set(dMdq.at[0:2,1].get())
     # dMdq2 = dMdq2.at[0:2,1].set(dMdq.at[2:4,1].get())
     # print(dMdq2)
 
-    # s.dMdq1 = dMdq1
-    # s.dMdq2 = dMdq2
-    # s.dMdq3 = dMdq3
-    # s.dMdq4 = dMdq4
-    # s.dMdq5 = dMdq5
-    # s.dMdq6 = dMdq6
-    # s.dMdq7 = dMdq7
-    #THis function has been edited to return each dMdq as another output
-    return dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7 
 
-def Vq(q,s):
+    return dMdq1, dMdq2, dMdq3 
+
+def Vq(q_hat,q_constants):
     #Function has to do FKM again to enable autograd to work
-    q1 = q.at[0].get()
-    q2 = q.at[1].get()
-    q3 = q.at[2].get()
-    q4 = q.at[3].get()
-    q5 = q.at[4].get()
-    q6 = q.at[5].get()
-    q7 = q.at[6].get()
+    q_bold = holonomicConstraint(q_hat,q_constants)     #pass through holonomic contraints
+    q1 = q_bold.at[0].get()
+    q3 = q_bold.at[1].get()
+    q5 = q_bold.at[2].get()
+    q7 = q_bold.at[3].get()
+
+    q2 = q_hat.at[0].get()
+    q4 = q_hat.at[1].get()
+    q6 = q_hat.at[2].get()
 
     A01 = tranz(s.l1)@rotx(pi)@rotz(q1)          
     A12 = rotx(pi/2)@tranz(-s.d1)@trany(-s.l2)@rotz(q2)
@@ -537,119 +532,23 @@ def Vq(q,s):
     return V.at[0].get()
 
 
-# def dynamics(x, s):
-    q1 = x.at[(0,0)].get()
-    q2 = x.at[(1,0)].get()
-    q3 = x.at[(2,0)].get()
-    q4 = x.at[(3,0)].get()
-    q5 = x.at[(4,0)].get()
-    q6 = x.at[(5,0)].get()
-    q7 = x.at[(6,0)].get()
+def holonomicConstraint(q_hat,constants):
+    dFcdq = jnp.array([
+        [0.,0.,0.],
+        [0.,0.,0.],
+        [0.,0.,0.],
+        [0.,0.,0.],
+    ])
+    q_bold = dFcdq@q_hat + constants
+    q_bold = q_bold.at[0].get()         #remove the extra array
+    return q_bold
 
-    p1 = x.at[(7,0)].get()
-    p2 = x.at[(8,0)].get()
-    p3 = x.at[(9,0)].get()
-    p4 = x.at[(10,0)].get()
-    p5 = x.at[(11,0)].get()
-    p6 = x.at[(12,0)].get()
-    p7 = x.at[(13,0)].get()
-
-    q = jnp.array([
-        q1, q2, q3, q4, q5, q6, q7
-        ])
-    p = jnp.array([
-        p1,p2,p3,p4,p5,p6,p7
-        ])
-    # print('q1',q1)
-    # print('q2',q2)
-    # print('p',p)
-    # print('q',q)
-
-    FKM(q,s)
-
-    massMatrix(q, s)
-    # Gravitation torque
-    s.g0 = jnp.array([[0],[0],[-s.g]])
-    g0 = s.g0
-    gq = gravTorque(s)
-    s.gq = gq
-    dVdq = s.dV(q)
-    dVdq1 = dVdq.at[0].get()
-    dVdq2 = dVdq.at[1].get()
-    dVdq3 = dVdq.at[2].get()
-    dVdq4 = dVdq.at[3].get()
-    dVdq5 = dVdq.at[4].get()
-    dVdq6 = dVdq.at[5].get()
-    dVdq7 = dVdq.at[6].get()
-
-
-    # Mass matrix inverse
-    Mq = s.Mq
-    dMdq1 = s.dMdq1
-    dMdq2 = s.dMdq2
-    dMdq3 = s.dMdq3
-    dMdq4 = s.dMdq4
-    dMdq5 = s.dMdq5
-    dMdq6 = s.dMdq6
-    dMdq7 = s.dMdq7
-
-    temp1 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq1)))
-    temp2 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq2)))
-    temp3 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq3)))
-    temp4 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq4)))
-    temp5 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq5)))
-    temp6 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq6)))
-    temp7 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq7)))
-    
-    dMinvdq1 = linalg.solve(-Mq, temp1)
-    dMinvdq2 = linalg.solve(-Mq, temp2)
-    dMinvdq3 = linalg.solve(-Mq, temp3)
-    dMinvdq4 = linalg.solve(-Mq, temp4)
-    dMinvdq5 = linalg.solve(-Mq, temp5)
-    dMinvdq6 = linalg.solve(-Mq, temp6)
-    dMinvdq7 = linalg.solve(-Mq, temp7)
-
-
-    # print('dVdq', jnp.transpose(dVdq))
-    dHdq = 0.5*(jnp.array([
-        [jnp.transpose(p)@dMinvdq1@p],
-        [jnp.transpose(p)@dMinvdq2@p],
-        [jnp.transpose(p)@dMinvdq3@p],
-        [jnp.transpose(p)@dMinvdq4@p],
-        [jnp.transpose(p)@dMinvdq5@p],
-        [jnp.transpose(p)@dMinvdq6@p],
-        [jnp.transpose(p)@dMinvdq7@p]
-    ])) + jnp.array([[dVdq1], [dVdq2], [dVdq3], [dVdq4], [dVdq5], [dVdq6], [dVdq7]])    # addition now works and gives same shape, however numerical values are incorrect
-
-    # print('dHdq', dHdq)
-
-    dHdp = 0.5*jnp.block([
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[1.],[0.],[0.],[0.],[0.],[0.],[0.]])) + (jnp.array([1.,0.,0.,0.,0.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[1.],[0.],[0.],[0.],[0.],[0.]])) + (jnp.array([0.,1.,0.,0.,0.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[1.],[0.],[0.],[0.],[0.]])) + (jnp.array([0.,0.,1.,0.,0.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[0.],[1.],[0.],[0.],[0.]])) + (jnp.array([0.,0.,0.,1.,0.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[0.],[0.],[1.],[0.],[0.]])) + (jnp.array([0.,0.,0.,0.,1.,0.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[0.],[0.],[0.],[1.],[0.]])) + (jnp.array([0.,0.,0.,0.,0.,1.,0.])@linalg.solve(s.Mq,p))],
-    [jnp.transpose(p)@linalg.solve(s.Mq,jnp.array([[0.],[0.],[0.],[0.],[0.],[0.],[1.]])) + (jnp.array([0.,0.,0.,0.,0.,0.,1.])@linalg.solve(s.Mq,p))]
-    ]) 
-
-    # print('dHdp', dHdp)
-    D = 0.5*jnp.eye(7)
-    xdot = jnp.block([
-        [jnp.zeros((7,7)), jnp.eye(7)],
-        [-jnp.eye(7),      -D ],
-    ])@jnp.block([[dHdq],[dHdp]])       #CHECK YOU ACTUALLY PUT THE GRAVITY IN 
-
-    print('xdot', xdot)
-
-    return xdot
-
-def ode_solve(xt,dMdq_block,dVdq, dt, m,gC,contA, s):
+def ode_solve(xt,constants,dMdq_block,dVdq, dt, m,gC,contA, s):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     substep = dt/m
     for i in range(m):
-        x_step= rk4(x_nextstep,substep,dynamics_test,gC,contA,dMdq_block,dVdq,s)
+        x_step= rk4(x_nextstep,constants,substep,dynamics_test,gC,contA,dMdq_block,dVdq,s)
         x_nextstep = x_step
         # print('xstep', x_step)
 
@@ -659,70 +558,72 @@ def ode_solve(xt,dMdq_block,dVdq, dt, m,gC,contA, s):
 
 ## MAIN CODE STARTS HERE
 
-# q1 = 0.
-# q2 = 0.
-# q3 = 0.
-# q4 = 0.
-# q5 = 0.
-# q6 = 0.
-# q7 = 0.
+#Inital states
+q_hat1 = pi/4.
+q_hat2 = 0.
+q_hat3 = 0.
 
-#HOME POSITION OF BOT
-q1 = 0   
-q2 = 0.261799387799149   
-q3 = 3.141592653589793   
-q4 = 4.014257279586958                   
-q5 = 0   
-q6 = 0.959931088596881   
-q7 = 1.570796326794897
+q_hat = jnp.array([q_hat1,q_hat2,q_hat3])
+p_hat = jnp.array([0.,0.,0.])
 
-
-q0 = jnp.array([q1,q2,q3,q4,q5,q6,q7])
-
-p0 = jnp.array([0.,0.,0.,0.,0.,0.,0.])
-
-x0 = jnp.block([[q0,p0]])
+x0 = jnp.block([[q_hat,p_hat]])
 x0 = jnp.transpose(x0)
 # print('x0',x0)
 
 s = self()
 s = robotParams(s)
-s.pred = 0
-# Mq = massMatrix_continuous(q0)
+
+constants = jnp.array([                 #These are the positions the wrists are locked to
+    [0.],
+    [0.],
+    [0.],
+    [0.],
+])
+
+Mq = massMatrix_continuous(q_hat,constants)
+
+holonomicTransform = jnp.array([
+        [0.,0.,0.],
+        [1.,0.,0.],
+        [0.,0.,0.],
+        [0.,1.,0.],
+        [0.,0.,0.],
+        [0.,0.,1.],
+        [0.,0.,0.],
+    ])
 # print(Mq)
-FKM(q0,s)
-Mq = massMatrix(q0,s)
+Mq_hat = jnp.transpose(holonomicTransform)@Mq@holonomicTransform        #for reduced order mass matrix
+print(Mq_hat)
 
-jnp.set_printoptions(precision=15)
-# print('Mass Matrix',Mq)
 
-# Mq_cont = massMatrix_continuous(q0)
-# print('Mq_cont', Mq_cont)
 # print('size Mq', jnp.shape(Mq))
-# MqP = MqPrime(q0)
+Mq_hat_P = MqPrime(q_hat,constants)
 
-# print('MqPrime', MqP)
-# print('MqPrime size', jnp.size(MqP))
+# print('Mq_hat Prime', Mq_hat_P)
+# print('MqPrime size', jnp.size(Mq_hat_P))
 
 massMatrixJac = jacfwd(MqPrime)
-dMdq = massMatrixJac(q0)
-# print('size dMdq', jnp.shape(dMdq))
-# unravel(dMdq, s)
+dMdqhat = massMatrixJac(q_hat,constants)
+print(dMdqhat)
+print('size dMdq', jnp.shape(dMdqhat))
 
-# dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7 = unravel(dMdq, s)
+dMdqhat1, dMdqhat2, dMdqhat3 = unravel(dMdqhat, s)
 
-# dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7])
-
+dMdq_block = jnp.array([dMdqhat1, dMdqhat2, dMdqhat3])
+print('dMdq:', dMdq_block)
 
 # dMdq1_extract = dMdq_block.at[0].get()
 # print('dMdq1', dMdq1)
 # print('dMdq1 extract', dMdq1_extract)
 
 # print('dMdq1 diff', dMdq1 - dMdq1_extract)
-# V = Vq(q0)
-# print('V', V)
-dV = jacfwd(Vq)
-# print('dV', dV(q0,s))
+V = Vq(q_hat,constants)
+print('V', V)
+dV = jacfwd(Vq,argnums=0)
+print('dV', dV(q_hat,constants))
+
+# dV2 = jacfwd(Vq,argnums=1)
+# print('dV2', dV2(q_hat,constants))
 # s.time = 5
 # xdot = dynamics_test(x0, s)
 # print('xdot', xdot)
@@ -733,82 +634,80 @@ dV = jacfwd(Vq)
 
 # print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
 # print(fake)
+
+
 # SIMULATION/PLOT
+
+# This simulations uses p and q hat
 (m,n) = x0.shape
 
-dt = 0.0005
+dt = 0.005
 substeps = 20
-T = 0.5
+T = 1
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
 
 t = jnp.arange(0,T,dt)
 l = t.size
 
-xHist = jnp.zeros((m,l+1))
-print('xHist',xHist)
+xHist = jnp.zeros((6,l+1))
+# print('xHist',xHist)
 print('x0',x0)
 
 xHist = xHist.at[:,[0]].set(x0)
-# xeHist = jnp.zeros((6,l))
-controlHist = jnp.zeros((7,l))      #controlling 7 states
+controlHist = jnp.zeros((3,l))      #controlling 3 states
 
 for k in range(l):
     x = xHist.at[:,[k]].get()
     q = jnp.array([x.at[0,0].get(),
                    x.at[1,0].get(),
-                   x.at[2,0].get(),
-                   x.at[3,0].get(),
+                   x.at[2,0].get(),])
+    p = jnp.array([x.at[3,0].get(),
                    x.at[4,0].get(),
-                   x.at[5,0].get(),
-                   x.at[6,0].get()])
-    p = jnp.array([x.at[7,0].get(),
-                   x.at[8,0].get(),
-                   x.at[9,0].get(),
-                   x.at[10,0].get(),
-                   x.at[11,0].get(),
-                   x.at[12,0].get(),
-                   x.at[13,0].get()])
+                   x.at[5,0].get(),])
 
-    dMdq = massMatrixJac(q)
-    dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7 = unravel(dMdq, s)
+    dMdq = massMatrixJac(q,constants)
+    dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
     
-    dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3, dMdq4, dMdq5, dMdq6, dMdq7])
+    dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
     # V = Vq(q)
-    dVdq = dV(q,s)
+    dVdq = dV(q,constants)
     time = t.at[k].get()
 
-    # if time > 0.3:
-    controlAction = jnp.zeros((7,1))
-    # else:
-        # controlAction = jnp.array([[5.],[0.],[-5.],[0.],[0.],[0.],[0.]])
-
-    # if time >0.15:
-    #     controlActive = 0 
-
     if controlActive == 0:          #reset if control action is down
-        controlAction = jnp.zeros((7,1))
+        controlAction = jnp.zeros((3,1))
 
     # print(x.at[:,0].get())
-    xtemp = ode_solve(x,dMdq_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
+    xtemp = ode_solve(x,constants,dMdq_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
     # xtemp = integrate.solve_ivp(dynamics_test,(0,dt),x.at[:,0].get(),method='RK45',args=(dMdq,dVdq, controlAction,s))      #needs this header: dynamics_test(t,x,dMdq,dVdq, controlAction,s):
     #         #has some dimension array stuff cause you need to pass in 1D y0 to function, extraction stuff in dynamicstest doesn't work.       This doesnt work with jit
     # print(xtemp)
     if jnp.isnan(xtemp.at[0,0].get()):
         print(xtemp.at[0,0].get())
         sys.exit('Code is stopped cause of NAN')
-    xHist = xHist.at[:,[k+1]].set(xtemp)
-    # s2 = FKM(xtemp,s)
 
+    # q_bold = holonomicConstraint(q,constants)
+    # q_temp = jnp.array([
+    #         q_bold.at[0].get(),
+    #         q_hat.at[0].get(),
+    #         q_bold.at[1].get(),
+    #         q_hat.at[1].get(),
+    #         q_bold.at[2].get(),
+    #         q_hat.at[2].get(), 
+    #         q_bold.at[3].get(),
+    # ])
+
+    xHist = xHist.at[:,[k+1]].set(xtemp)
+    # print(xtemp)
     controlHist = controlHist.at[:,[k]].set(controlAction)
     
 #outputting to csv file
-
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK/data/HomePosition_structless_uncompiled', 'w', newline='') as f:
+with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_test', 'w', newline='') as f:
 
     writer = csv.writer(f)
+    # writer.writerow(simtype)
     writer.writerow(details)
     writer.writerow(header)
 
@@ -817,71 +716,25 @@ with open('/root/FYP/7LINK/data/HomePosition_structless_uncompiled', 'w', newlin
         q1 = xHist.at[0,i].get()
         q2 = xHist.at[1,i].get()
         q3 = xHist.at[2,i].get()
-        q4 = xHist.at[3,i].get()
-        q5 = xHist.at[4,i].get()
-        q6 = xHist.at[5,i].get()
-        q7 = xHist.at[6,i].get()
-        p1 = xHist.at[7,i].get()
-        p2 = xHist.at[8,i].get()
-        p3 = xHist.at[9,i].get()
-        p4 = xHist.at[10,i].get()
-        p5 = xHist.at[11,i].get()
-        p6 = xHist.at[12,i].get()
-        p7 = xHist.at[13,i].get()
+        p1 = xHist.at[3,i].get()
+        p2 = xHist.at[4,i].get()
+        p3 = xHist.at[5,i].get()
         timestamp = t.at[i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,p1,p2,p3,p4,p5,p6,p7]
-        # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3]
+          # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)
-    header = ['Time', 'Control History']
-    writer.writerow(details)
-    for i in range(l):
-        c1 = controlHist.at[0,i].get()
-        c2 = controlHist.at[1,i].get()
-        c3 = controlHist.at[2,i].get()
-        c4 = controlHist.at[3,i].get()
-        c5 = controlHist.at[4,i].get()
-        c6 = controlHist.at[5,i].get()
-        c7 = controlHist.at[6,i].get()
-        timestamp = t.at[i].get()
-        data = ['Time:', timestamp, 'Control Action:    ', c1,c2,c3,c4,c5,c6,c7]
+    # header = ['Time', 'Control History']
+    # writer.writerow(details)
+    # for i in range(l):
+    #     c1 = controlHist.at[0,i].get()
+    #     c2 = controlHist.at[1,i].get()
+    #     c3 = controlHist.at[2,i].get()
 
-        writer.writerow(data)
+    #     timestamp = t.at[i].get()
+    #     data = ['Time:', timestamp, 'Control Action:    ', c1,c2,c3]
+
+    #     writer.writerow(data)
 # print('xHist',xHist)    
 # print('xeHist',xeHist)
-
-def plot():
-    fig, ax = plt.subplots(7,1)
-    # ax = fig.subplots()
-    ax[0].plot(t, xHist.at[0,:].get())
-
-    ax[1].plot(t, xHist.at[1,:].get())
-
-    ax[2].plot(t, xHist.at[2,:].get())
-
-    ax[3].plot(t, xHist.at[3,:].get())
-
-    ax[4].plot(t, xHist.at[4,:].get())
-
-    ax[5].plot(t, xHist.at[5,:].get())
-
-    ax[6].plot(t, xHist.at[6,:].get())
-    fig.savefig('plot_test_7.png')
-
-
-    fig, ax = plt.subplots(3,1)
-    ax[0].plot(t, xeHist.at[0,:].get())
-
-    ax[1].plot(t, xeHist.at[1,:].get())
-
-    ax[2].plot(t, xeHist.at[2,:].get())
-    fig.savefig('plot_test_7_endEffector.png')
-
-
-
-    ax = plt.figure().add_subplot(projection = '3d')
-    # plt.Axes3D.plot(xeHist.at[0,0].get(),xeHist.at[1,0].get(),xeHist.at[2,0].get())
-    ax.plot(xeHist.at[0,0].get(),xeHist.at[1,0].get(),xeHist.at[2,0].get(), label='7 Link Manipulator')
-    plt.show()
-    fig.savefig('plot_test_3D_7Link')
 

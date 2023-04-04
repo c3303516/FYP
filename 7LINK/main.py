@@ -793,7 +793,7 @@ for k in range(l):
     xtemp = ode_solve(x,dMdq_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
     # xtemp = integrate.solve_ivp(dynamics_test,(0,dt),x.at[:,0].get(),method='RK45',args=(dMdq,dVdq, controlAction,s))      #needs this header: dynamics_test(t,x,dMdq,dVdq, controlAction,s):
     #         #has some dimension array stuff cause you need to pass in 1D y0 to function, extraction stuff in dynamicstest doesn't work.       This doesnt work with jit
-    # print(xtemp)
+    print(xtemp)
     if jnp.isnan(xtemp.at[0,0].get()):
         print(xtemp.at[0,0].get())
         sys.exit('Code is stopped cause of NAN')
