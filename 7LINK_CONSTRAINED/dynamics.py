@@ -46,7 +46,8 @@ def dynamics_test(t,x,constants,dMdq,dVdq, gravComp,controlAction,s): #need to p
     # print('q',q)
     p = jnp.transpose(p)
     q = jnp.transpose(q)
-    q_bold = dFcdq@q + constants.at[0].get()
+    # q_bold = dFcdq@q + constants.at[0].get()
+    q_bold = constants.at[0].get()
     
     q1 = q_bold.at[0].get()
     q3 = q_bold.at[1].get()
@@ -267,65 +268,48 @@ def dynamics_test(t,x,constants,dMdq,dVdq, gravComp,controlAction,s): #need to p
         [0.,0.,0.],
     ])
 
+    # print('Mq7',Mq7)
     Mq = jnp.transpose(holonomicTransform)@Mq7@holonomicTransform  #transform needed to produce Mq_hat
-    
+    # print(Mq)
+
     # Gravitation torque
     g0 = jnp.array([[0],[0],[-s.g]])
 
     dVdq1 = dVdq.at[0].get()
     dVdq2 = dVdq.at[1].get()
     dVdq3 = dVdq.at[2].get()
-    # dVdq4 = dVdq.at[3].get()
-    # dVdq5 = dVdq.at[4].get()
-    # dVdq6 = dVdq.at[5].get()
-    # dVdq7 = dVdq.at[6].get()
 
     # Mass matrix inverse
 
     dMdq1 = dMdq.at[0].get()
     dMdq2 = dMdq.at[1].get()
     dMdq3 = dMdq.at[2].get()
-    # dMdq4 = dMdq.at[3].get()
-    # dMdq5 = dMdq.at[4].get()
-    # dMdq6 = dMdq.at[5].get()
-    # dMdq7 = dMdq.at[6].get()
 
 
     temp1 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq1)))
     temp2 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq2)))
     temp3 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq3)))
-    # temp4 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq4)))
-    # temp5 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq5)))
-    # temp6 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq6)))
-    # temp7 = jnp.transpose(linalg.solve(jnp.transpose(Mq), jnp.transpose(dMdq7)))
     
-    dMinvdq1 = -linalg.solve(Mq, temp1)     #m1 and 2 ae messed up for some reason.
+    dMinvdq1 = -linalg.solve(Mq, temp1)
     dMinvdq2 = -linalg.solve(Mq, temp2)
     dMinvdq3 = -linalg.solve(Mq, temp3)
-    # dMinvdq4 = -linalg.solve(Mq, temp4)
-    # dMinvdq5 = -linalg.solve(Mq, temp5)
-    # dMinvdq6 = -linalg.solve(Mq, temp6)
-    # dMinvdq7 = -linalg.solve(Mq, temp7)
 
 
     # jnp.set_printoptions(precision=15)
+    # print('temp1',temp1)
+    # print('dMinvdq1', dMinvdq1)
+
     # print('Temp1',temp1)
     # print('temp2',temp2)
 
     # print('dMdq1',dMdq1)
     # print('dMdq2',dMdq2)
     # print('dMdq3',dMdq3)
-    # print('dMdq4',dMdq4)
-    # print('dMdq5',dMdq5)
-    # print('dMdq6',dMdq6)
-    # print('dMdq7',dMdq7)
+
     # print('dMinvdq1',dMinvdq1)
     # print('dMinvdq2',dMinvdq2)
     # print('dMinvdq3',dMinvdq3)
-    # print('dMinvdq4',dMinvdq4)
-    # print('dMinvdq5',dMinvdq5)
-    # print('dMinvdq6',dMinvdq6)
-    # print('dMinvdq7',dMinvdq7)
+
 
     # with open('/root/FYP/7LINK/M_data', 'w', newline='') as f:
 
@@ -335,17 +319,9 @@ def dynamics_test(t,x,constants,dMdq,dVdq, gravComp,controlAction,s): #need to p
     #             ['dMdq1:', dMdq1],
     #             ['dMdq2:', dMdq2],
     #             ['dMdq3:', dMdq3],
-    #             ['dMdq4:', dMdq4],
-    #             ['dMdq5:', dMdq5],
-    #             ['dMdq6:', dMdq6],
-    #             ['dMdq7:', dMdq7],
     #             ['dMinvdq1',dMinvdq1],
     #             ['dMinvdq2',dMinvdq2],
     #             ['dMinvdq3',dMinvdq3],
-    #             ['dMinvdq4',dMinvdq4],
-    #             ['dMinvdq5',dMinvdq5],
-    #             ['dMinvdq6',dMinvdq6],
-    #             ['dMinvdq7',dMinvdq7],
     #     ]
             
     #     writer.writerows(data)

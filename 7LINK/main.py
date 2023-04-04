@@ -736,9 +736,9 @@ dV = jacfwd(Vq)
 # SIMULATION/PLOT
 (m,n) = x0.shape
 
-dt = 0.0005
+dt = 0.001
 substeps = 20
-T = 0.5
+T = 1
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
 
@@ -748,6 +748,8 @@ l = t.size
 xHist = jnp.zeros((m,l+1))
 print('xHist',xHist)
 print('x0',x0)
+
+hamHist = jnp.zeros((1,l))
 
 xHist = xHist.at[:,[0]].set(x0)
 # xeHist = jnp.zeros((6,l))
@@ -793,7 +795,7 @@ for k in range(l):
     xtemp = ode_solve(x,dMdq_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
     # xtemp = integrate.solve_ivp(dynamics_test,(0,dt),x.at[:,0].get(),method='RK45',args=(dMdq,dVdq, controlAction,s))      #needs this header: dynamics_test(t,x,dMdq,dVdq, controlAction,s):
     #         #has some dimension array stuff cause you need to pass in 1D y0 to function, extraction stuff in dynamicstest doesn't work.       This doesnt work with jit
-    print(xtemp)
+    # print(xtemp)
     if jnp.isnan(xtemp.at[0,0].get()):
         print(xtemp.at[0,0].get())
         sys.exit('Code is stopped cause of NAN')
@@ -801,12 +803,17 @@ for k in range(l):
     # s2 = FKM(xtemp,s)
 
     controlHist = controlHist.at[:,[k]].set(controlAction)
+
+    Mq_temp = massMatrix_continuous(q)
+    hamTemp = 0.5*(jnp.transpose(p)@linalg.solve(Mq_temp,p)) + Vq(q,s)
+    # print(hamTemp)
+    hamHist = hamHist.at[k].set(hamTemp)
     
 #outputting to csv file
 
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK/data/HomePosition_structless_uncompiled', 'w', newline='') as f:
+with open('/root/FYP/7LINK/data/HomePosition_ham', 'w', newline='') as f:
 
     writer = csv.writer(f)
     writer.writerow(details)
@@ -828,8 +835,9 @@ with open('/root/FYP/7LINK/data/HomePosition_structless_uncompiled', 'w', newlin
         p5 = xHist.at[11,i].get()
         p6 = xHist.at[12,i].get()
         p7 = xHist.at[13,i].get()
+        ham = hamHist.at[0,i].get()
         timestamp = t.at[i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,p1,p2,p3,p4,p5,p6,p7]
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,p1,p2,p3,p4,p5,p6,p7,ham]
         # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)

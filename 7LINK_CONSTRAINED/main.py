@@ -117,7 +117,15 @@ def hatSE3(x):
 
 def massMatrix_continuous(q_hat,q_constants):
    
-    q_bold = holonomicConstraint(q_hat,q_constants)     #pass through holonomic contraints
+    dFcdq = jnp.array([
+        [0.,0.,0.],
+        [0.,0.,0.],
+        [0.,0.,0.],
+        [0.,0.,0.],
+    ])
+    q_bold = dFcdq@q_hat + constants.at[0].get()
+    # print(q_bold)
+
     q1 = q_bold.at[0].get()
     q3 = q_bold.at[1].get()
     q5 = q_bold.at[2].get()
@@ -423,7 +431,15 @@ def unravel(dMdq, s):
 
 def Vq(q_hat,q_constants):
     #Function has to do FKM again to enable autograd to work
-    q_bold = holonomicConstraint(q_hat,q_constants)     #pass through holonomic contraints
+    dFcdq = jnp.array([
+        [0.,0.,0.],
+        [0.,0.,0.],
+        [0.,0.,0.],
+        [0.,0.,0.],
+    ])
+    q_bold = dFcdq@q_hat + constants.at[0].get()
+    # print(q_bold) 
+
     q1 = q_bold.at[0].get()
     q3 = q_bold.at[1].get()
     q5 = q_bold.at[2].get()
@@ -559,7 +575,7 @@ def ode_solve(xt,constants,dMdq_block,dVdq, dt, m,gC,contA, s):
 ## MAIN CODE STARTS HERE
 
 #Inital states
-q_hat1 = pi/4.
+q_hat1 = pi/2.
 q_hat2 = 0.
 q_hat3 = 0.
 
@@ -569,6 +585,8 @@ p_hat = jnp.array([0.,0.,0.])
 x0 = jnp.block([[q_hat,p_hat]])
 x0 = jnp.transpose(x0)
 # print('x0',x0)
+
+q_hat = jnp.transpose(q_hat)
 
 s = self()
 s = robotParams(s)
@@ -581,6 +599,7 @@ constants = jnp.array([                 #These are the positions the wrists are 
 ])
 
 Mq = massMatrix_continuous(q_hat,constants)
+print('Mq',Mq)
 
 holonomicTransform = jnp.array([
         [0.,0.,0.],
@@ -599,6 +618,7 @@ print(Mq_hat)
 # print('size Mq', jnp.shape(Mq))
 Mq_hat_P = MqPrime(q_hat,constants)
 
+# print(fake)
 # print('Mq_hat Prime', Mq_hat_P)
 # print('MqPrime size', jnp.size(Mq_hat_P))
 
@@ -641,8 +661,8 @@ print('dV', dV(q_hat,constants))
 # This simulations uses p and q hat
 (m,n) = x0.shape
 
-dt = 0.005
-substeps = 20
+dt = 0.001
+substeps = 10
 T = 1
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
@@ -652,6 +672,7 @@ l = t.size
 
 xHist = jnp.zeros((6,l+1))
 # print('xHist',xHist)
+hamHist = jnp.zeros((1,l))
 print('x0',x0)
 
 xHist = xHist.at[:,[0]].set(x0)
@@ -665,7 +686,7 @@ for k in range(l):
     p = jnp.array([x.at[3,0].get(),
                    x.at[4,0].get(),
                    x.at[5,0].get(),])
-
+    # print(jnp.shape(p))
     dMdq = massMatrixJac(q,constants)
     dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
     
@@ -700,7 +721,14 @@ for k in range(l):
     xHist = xHist.at[:,[k+1]].set(xtemp)
     # print(xtemp)
     controlHist = controlHist.at[:,[k]].set(controlAction)
-    
+
+    Mq_temp = massMatrix_continuous(q,constants)
+    Mq_hat = jnp.transpose(holonomicTransform)@Mq_temp@holonomicTransform 
+    hamTemp = 0.5*(jnp.transpose(p)@linalg.solve(Mq_hat,p)) + Vq(q_hat,constants)
+    # print(hamTemp)
+    hamHist = hamHist.at[k].set(hamTemp)
+
+
 #outputting to csv file
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
@@ -719,8 +747,9 @@ with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_test', 'w', newline='') as f:
         p1 = xHist.at[3,i].get()
         p2 = xHist.at[4,i].get()
         p3 = xHist.at[5,i].get()
+        ham = hamHist.at[0,i].get()
         timestamp = t.at[i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3]
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham]
           # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)
