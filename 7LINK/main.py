@@ -736,9 +736,9 @@ dV = jacfwd(Vq)
 # SIMULATION/PLOT
 (m,n) = x0.shape
 
-dt = 0.001
-substeps = 20
-T = 1
+dt = 0.01
+substeps = 2
+T = 0.7
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
 
@@ -749,7 +749,9 @@ xHist = jnp.zeros((m,l+1))
 print('xHist',xHist)
 print('x0',x0)
 
-hamHist = jnp.zeros((1,l))
+hamHist = jnp.zeros(l)
+kinHist = jnp.zeros(l)
+potHist = jnp.zeros(l)
 
 xHist = xHist.at[:,[0]].set(x0)
 # xeHist = jnp.zeros((6,l))
@@ -805,15 +807,21 @@ for k in range(l):
     controlHist = controlHist.at[:,[k]].set(controlAction)
 
     Mq_temp = massMatrix_continuous(q)
-    hamTemp = 0.5*(jnp.transpose(p)@linalg.solve(Mq_temp,p)) + Vq(q,s)
+    hamTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_temp,p))) + Vq(q,s)
+    potTemp = Vq(q,s)
+    kinTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_temp,p)))
     # print(hamTemp)
     hamHist = hamHist.at[k].set(hamTemp)
+    kinHist = kinHist.at[k].set(kinTemp)
+    potHist = potHist.at[k].set(potTemp)
     
 #outputting to csv file
+#check hamiltonian
+print(hamHist)
 
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK/data/HomePosition_ham', 'w', newline='') as f:
+with open('/root/FYP/7LINK/data/HomePosition_Ham', 'w', newline='') as f:
 
     writer = csv.writer(f)
     writer.writerow(details)
@@ -835,9 +843,11 @@ with open('/root/FYP/7LINK/data/HomePosition_ham', 'w', newline='') as f:
         p5 = xHist.at[11,i].get()
         p6 = xHist.at[12,i].get()
         p7 = xHist.at[13,i].get()
-        ham = hamHist.at[0,i].get()
+        ham = hamHist.at[i].get()
+        kin = kinHist.at[i].get()
+        pot = potHist.at[i].get()
         timestamp = t.at[i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,p1,p2,p3,p4,p5,p6,p7,ham]
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,p1,p2,p3,p4,p5,p6,p7,ham,kin,pot]
         # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)
