@@ -11,9 +11,9 @@ from dynamics import dynamics_test
 from rk4 import rk4
 from params import robotParams
 from copy import deepcopy
-from scipy.linalg import solve_continuous_lyapunov
-from jax.scipy.linalg import sqrtm
+from scipy import integrate, linalg
 import sys
+
 import csv
 
 # import matplotlib.pyplot as plt
@@ -115,7 +115,7 @@ def hatSE3(x):
     ])
     return S
 
-def massMatrix_continuous(q_hat,qconstants):
+def massMatrix_continuous(q_hat,q_constants):
    
     dFcdq = jnp.array([
         [0.,0.,0.],
@@ -123,7 +123,7 @@ def massMatrix_continuous(q_hat,qconstants):
         [0.,0.,0.],
         [0.,0.,0.],
     ])
-    q_bold = dFcdq@q_hat + qconstants.at[0].get()
+    q_bold = dFcdq@q_hat + constants.at[0].get()
     # print(q_bold)
 
     q1 = q_bold.at[0].get()
@@ -429,7 +429,7 @@ def unravel(dMdq, s):
 
     return dMdq1, dMdq2, dMdq3 
 
-def Vq(q_hat, qconstants):
+def Vq(q_hat,q_constants):
     #Function has to do FKM again to enable autograd to work
     dFcdq = jnp.array([
         [0.,0.,0.],
@@ -437,8 +437,7 @@ def Vq(q_hat, qconstants):
         [0.,0.,0.],
         [0.,0.,0.],
     ])
-    q_bold = dFcdq@q_hat + qconstants.at[0].get()
-    # print('con', constants.at[0].get())
+    q_bold = dFcdq@q_hat + constants.at[0].get()
     # print(q_bold) 
 
     q1 = q_bold.at[0].get()
@@ -549,14 +548,14 @@ def Vq(q_hat, qconstants):
     return V.at[0].get()
 
 
-def holonomicConstraint(q_hat, qconstants):
+def holonomicConstraint(q_hat,constants):
     dFcdq = jnp.array([
         [0.,0.,0.],
         [0.,0.,0.],
         [0.,0.,0.],
         [0.,0.,0.],
     ])
-    q_bold = dFcdq@q_hat + qconstants
+    q_bold = dFcdq@q_hat + constants
     q_bold = q_bold.at[0].get()         #remove the extra array
     return q_bold
 
@@ -564,69 +563,19 @@ def ode_solve(xt,constants,dMdq_block,dVdq, dt, m,gC,contA, s):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     substep = dt/m
-    s.constants = constants
     for i in range(m):
-        x_step= rk4(x_nextstep,substep,dynamics_test,gC,contA,dMdq_block,dVdq,s)
+        x_step= rk4(x_nextstep,constants,substep,dynamics_test,gC,contA,dMdq_block,dVdq,s)
         x_nextstep = x_step
         # print('xstep', x_step)
 
     x_finalstep = x_nextstep
     return x_finalstep
 
-def TqPrime(q_hat,qconstants,dMdq_blk):         #THis is depedent on q so this has to be calculated in the dynamics.
-    Mq = massMatrix_continuous(q_hat,qconstants)
-    A = jnp.array([
-        [0.,0.,0.],
-        [1.,0.,0.],
-        [0.,0.,0.],
-        [0.,1.,0.],
-        [0.,0.,0.],
-        [0.,0.,1.],
-        [0.,0.,0.],
-    ])
-    
-    Mq_hat = jnp.transpose(A)@Mq@A
 
-    Tqinv = jnp.real(sqrtm(Mq_hat))     #j components were 0, hope this doesn't fuck anything. I need real.
-    # jnp.set_printoptions(precision=15)
-
-    # print('Tqinv',Tqinv)
-
-    dMdq1 = dMdq_blk.at[0].get()
-    dMdq2 = dMdq_blk.at[1].get()
-    dMdq3 = dMdq_blk.at[2].get()
-    # print('dMdq1',dMdq1)
-
-    dTqinvdq1 = solve_continuous_lyapunov(Tqinv,dMdq1)
-    dTqinvdq2 = solve_continuous_lyapunov(Tqinv,dMdq2)
-    dTqinvdq3 = solve_continuous_lyapunov(Tqinv,dMdq3)
-
-    # print(dTqinvdq1)
-    # print(dTqinvdq2)
-    # print(dTqinvdq3)
-    
-
-    # Tqinvprime = jnp.zeros([Tqinv.size])
-    # m,n = jnp.shape(Tqinv)
-    # # print('shape of Mq_hat: n, m', n, m)
-    # # print('size Mq_hat', Mq_hat.size)
-    # for i in range(m):
-    #     # print('i', i)
-    #     Tqinvprime = Tqinvprime.at[n*i:n*(i+1)].set(Mq_hat.at[0:m,i].get())
-   
-    return dTqinvdq1
-
-def dTqinvdq(Tqinv,dMdqi):
-
-    dTqinvdqi = solve_continuous_lyapunov(Tqinv,dMdqi)
-
-    return dTqinvdqi
-
-
-## MAIN CODE STARTS HERE #################################
+## MAIN CODE STARTS HERE
 
 #Inital states
-q_hat1 = pi/2.
+q_hat1 = pi/12.
 q_hat2 = 0.
 q_hat3 = 0.
 
@@ -650,7 +599,6 @@ constants = jnp.array([                 #These are the positions the wrists are 
     [0.],
     [0.],
 ])
-# constants = constants.at[0].get()
 
 Mq = massMatrix_continuous(q_hat,constants)
 # print('Mq',Mq)
@@ -666,21 +614,11 @@ holonomicTransform = jnp.array([
     ])
 # print(Mq)
 Mq_hat = jnp.transpose(holonomicTransform)@Mq@holonomicTransform        #for reduced order mass matrix
-print(Mq_hat)
-
-# Mq_inv = linalg.inv(Mq_hat)
-# print('Mqinv', Mq_inv)
-
-# Tq = linalg.sqrtm(Mq_inv)           #needs to be root of inverse
-# print(Tq)
-
-# dTqdq = jacfwd(Tq)
+# print(Mq_hat)
 
 
-# def Tq_print(q_hat, constaints):
-
-# # print('size Mq', jnp.shape(Mq))
-# Mq_hat_P = MqPrime(q_hat,constants)
+# print('size Mq', jnp.shape(Mq))
+Mq_hat_P = MqPrime(q_hat,constants)
 
 # print(fake)
 # print('Mq_hat Prime', Mq_hat_P)
@@ -706,19 +644,15 @@ print('V', V)
 dV = jacfwd(Vq,argnums=0)
 print('dV', dV(q_hat,constants))
 
-# Tqinv_test = TqPrime(q_hat,constants)
-# print('Tqinv',Tqinv_test)
 
-# Tinvjac = jacfwd(TqPrime)
-# dTinvdq = Tinvjac(q_hat,constants)
-dTqdinvi = TqPrime(q_hat,constants,dMdq_block)
+test_M = jnp.array([[1 ,-4],
+                   [-4 , 16]])
 
-# print('dTqdinvi',dTqdinvi)
+test = linalg.sqrtm(Mq_hat)
+print(test)
 
-
-
-# print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
-# print(fake)
+print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
+print(fake)
 
 
 # SIMULATION/PLOT
@@ -761,7 +695,6 @@ for k in range(l):
     dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
     
     dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
-    # print('block',dMdq_block)
     # V = Vq(q)
     dVdq = dV(q,constants)
     time = t.at[k].get()
@@ -796,7 +729,7 @@ for k in range(l):
 
     Mq_temp = massMatrix_continuous(q,constants)
     Mq_hat = jnp.transpose(holonomicTransform)@Mq_temp@holonomicTransform 
-    kinTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p)))       #This is not correct as I have not done the transform back from momentum coords
+    kinTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p)))
     potTemp = Vq(q,constants)
     hamTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p))) + Vq(q,constants)
     # print(kinTemp)
@@ -812,7 +745,7 @@ print(hamHist)
 #outputting to csv file
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_Ham_Test', 'w', newline='') as f:
+with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_ham_negativeGravity', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
