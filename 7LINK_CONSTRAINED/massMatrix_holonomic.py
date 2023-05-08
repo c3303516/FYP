@@ -1,13 +1,16 @@
 import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
-
+import jax
 from params import *
 from homogeneousTransforms import *
+from functools import partial
+from jax.scipy.linalg import sqrtm
 
+@partial(jax.jit, static_argnames=['s'])
 def massMatrix_holonomic(q0, s):
-    # q2 = x.at[(0,0)].get()      #make the full q vector
-    # q4 = x.at[(1,0)].get()
-    # q6 = x.at[(2,0)].get()
+    q2 = q0.at[0].get()      #make the full q vector
+    q4 = q0.at[1].get()
+    q6 = q0.at[2].get()
 
     
     # q0 = jnp.array([     #this is qhat. q0 denotes before momentum transform
@@ -26,7 +29,8 @@ def massMatrix_holonomic(q0, s):
 
     # print('q',q)
 
-    q0 = jnp.transpose(q0)
+    # q0 = jnp.transpose(q0)
+    # print(q0)
     qconstants = s.constants
     q0_bold = qconstants.at[0].get()     #constrained variabless
     
@@ -249,10 +253,11 @@ def massMatrix_holonomic(q0, s):
         [0.,0.,0.],
     ])
 
-    # print('Mq7',Mq7)
     Mq = jnp.transpose(holonomicTransform)@Mq7@holonomicTransform  #transform needed to produce Mq_hat
-    
-    return Mq
+    Tqinv = jnp.real(sqrtm(Mq))
+    Tq = linalg.solve(Tqinv,jnp.eye(3)) 
+
+    return Mq, Tq, Tqinv
 
     
 

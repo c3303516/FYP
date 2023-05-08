@@ -5,9 +5,10 @@ import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
 from effectorFKM import FKM, endEffector
-from massMatrix import massMatrix
+from massMatrix_holonomic import massMatrix_holonomic
 # from dynamics import  gravTorque
 from dynamics import dynamics_test
+from dynamics_momentumTransform import dynamics_Transform
 from rk4 import rk4
 from params import robotParams
 from copy import deepcopy
@@ -399,9 +400,9 @@ def MqPrime(q_hat,constants):
         
     return Mprime
 
-def unravel(dMdq, s):
+def unravel(dMdq_temp, s):
     # could probably generalise this for any array
-    (m,n) = jnp.shape(dMdq)
+    (m,n) = jnp.shape(dMdq_temp)
     dMdq1 = jnp.zeros((n,n))
     dMdq2 = jnp.zeros((n,n))
     dMdq3 = jnp.zeros((n,n))
@@ -414,9 +415,9 @@ def unravel(dMdq, s):
     for i in range(n):
         # print('i',i)        #i goes from 0-6
         # print('n*i',n*i)
-        dMdq1 = dMdq1.at[0:n,i].set(dMdq.at[n*i:n*(i+1),0].get())
-        dMdq2 = dMdq2.at[0:n,i].set(dMdq.at[n*i:n*(i+1),1].get())
-        dMdq3 = dMdq3.at[0:n,i].set(dMdq.at[n*i:n*(i+1),2].get())
+        dMdq1 = dMdq1.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),0].get())
+        dMdq2 = dMdq2.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),1].get())
+        dMdq3 = dMdq3.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),2].get())
         # dMdq4 = dMdq4.at[0:n,i].set(dMdq.at[n*i:n*(i+1),3].get())
         # dMdq5 = dMdq5.at[0:n,i].set(dMdq.at[n*i:n*(i+1),4].get())
         # dMdq6 = dMdq6.at[0:n,i].set(dMdq.at[n*i:n*(i+1),5].get())
@@ -560,13 +561,13 @@ def holonomicConstraint(q_hat, qconstants):
     q_bold = q_bold.at[0].get()         #remove the extra array
     return q_bold
 
-def ode_solve(xt,constants,dMdq_block,dVdq, dt, m,gC,contA, s):
+def ode_solve(xt,Tq_val,constants,dMdq_block,dTqinv_block,dVdq, dt, m,gC,contA, s):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     substep = dt/m
-    s.constants = constants
     for i in range(m):
-        x_step= rk4(x_nextstep,substep,dynamics_test,gC,contA,dMdq_block,dVdq,s)
+        # x_step= rk4(x_nextstep,Tq_val,substep,dynamics_test,gC,contA,dMdq_block,dTqinv_block,dVdq,s)
+        x_step= rk4(x_nextstep,Tq_val,substep,dynamics_Transform,gC,contA,dMdq_block,dTqinv_block,dVdq,s)
         x_nextstep = x_step
         # print('xstep', x_step)
 
@@ -666,7 +667,7 @@ holonomicTransform = jnp.array([
     ])
 # print(Mq)
 Mq_hat = jnp.transpose(holonomicTransform)@Mq@holonomicTransform        #for reduced order mass matrix
-print(Mq_hat)
+# print(Mq_hat)
 
 # Mq_inv = linalg.inv(Mq_hat)
 # print('Mqinv', Mq_inv)
@@ -726,8 +727,9 @@ dTqdinvi = TqPrime(q_hat,constants,dMdq_block)
 # This simulations uses p and q hat
 (m,n) = x0.shape
 
-dt = 0.01
-substeps = 10
+s.constants = constants         #for holonomic transform
+dt = 0.001
+substeps = 2
 T = 1
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
@@ -740,25 +742,38 @@ xHist = jnp.zeros((6,l+1))
 hamHist = jnp.zeros(l)
 kinHist = jnp.zeros(l)
 potHist = jnp.zeros(l)
-print('hamHist',hamHist)
+# print('hamHist',hamHist)
 print('x0',x0)
 
 xHist = xHist.at[:,[0]].set(x0)
 controlHist = jnp.zeros((3,l))      #controlling 3 states
+
+jnp.set_printoptions(precision=15)
 
 for k in range(l):
     x = xHist.at[:,[k]].get()
     q = jnp.array([x.at[0,0].get(),
                    x.at[1,0].get(),
                    x.at[2,0].get()])
-    p = jnp.array([x.at[3,0].get(),
+    p = jnp.array([x.at[3,0].get(),        #This is currently returning p, not p0
                    x.at[4,0].get(),
                    x.at[5,0].get()])
     # print(q,p)
     
+    Mq_hat, Tq, Tqinv = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+    # print(Mq_hat)
     # print('shape x0',jnp.shape(x0))
     dMdq = massMatrixJac(q,constants)
     dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
+    # print('Tq',Tq)
+    # print('Tqinv',Tqinv)
+    # print(stop)
+    dTqinvdq1 = solve_continuous_lyapunov(Tqinv,dMdq1)
+    dTqinvdq2 = solve_continuous_lyapunov(Tqinv,dMdq2)
+    dTqinvdq3 = solve_continuous_lyapunov(Tqinv,dMdq3)
+
+    dTqinv_block = jnp.array([dTqinvdq1,dTqinvdq2,dTqinvdq3])
+    # print(type(dMdq1))
     
     dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
     # print('block',dMdq_block)
@@ -768,15 +783,17 @@ for k in range(l):
 
     if controlActive == 0:          #reset if control action is down
         controlAction = jnp.zeros((3,1))
-
+    
     # print(x.at[:,0].get())
-    xtemp = ode_solve(x,constants,dMdq_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
+    xtemp = ode_solve(x,Tq,constants,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
     # xtemp = integrate.solve_ivp(dynamics_test,(0,dt),x.at[:,0].get(),method='RK45',args=(dMdq,dVdq, controlAction,s))      #needs this header: dynamics_test(t,x,dMdq,dVdq, controlAction,s):
     #         #has some dimension array stuff cause you need to pass in 1D y0 to function, extraction stuff in dynamicstest doesn't work.       This doesnt work with jit
     # print(xtemp)
     if jnp.isnan(xtemp.at[0,0].get()):
         print(xtemp.at[0,0].get())
-        sys.exit('Code is stopped cause of NAN')
+        print('NAN found, exiting loop')
+        break
+        # sys.exit('Code is stopped cause of NAN')
 
     # q_bold = holonomicConstraint(q,constants)
     # q_temp = jnp.array([
@@ -794,14 +811,18 @@ for k in range(l):
     controlHist = controlHist.at[:,[k]].set(controlAction)
     # print('size of p and q', jnp.shape(p),jnp.shape(q))
 
-    Mq_temp = massMatrix_continuous(q,constants)
-    Mq_hat = jnp.transpose(holonomicTransform)@Mq_temp@holonomicTransform 
-    kinTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p)))       #This is not correct as I have not done the transform back from momentum coords
+    # Mq_temp = massMatrix_continuous(q,constants)
+    # Mq_hat = jnp.transpose(holonomicTransform)@Mq_temp@holonomicTransform 
+    # kinTemp = 0.5*(jnp.transpose(p0)@(linalg.solve(Mq_hat,p0)))       #This is not correct as I have not done the transform back from momentum coords
+    kinTempTransformed = 0.5*(jnp.transpose((p))@(p))
     potTemp = Vq(q,constants)
-    hamTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p))) + Vq(q,constants)
+    # hamTemp = 0.5*(jnp.transpose(p0)@(linalg.solve(Mq_hat,p0))) + Vq(q,constants)
+    hamTemp = 0.5*(jnp.transpose((p))@(p)) + potTemp
     # print(kinTemp)
+    # print(0.5*(jnp.transpose((Tq@p0))@(Tq@p0)) - kinTemp)
     hamHist = hamHist.at[k].set(hamTemp)
-    kinHist = kinHist.at[k].set(kinTemp)
+    # kinHist = kinHist.at[k].set(kinTemp)
+    kinHist = kinHist.at[k].set(kinTempTransformed)
     potHist = potHist.at[k].set(potTemp)
 
 
@@ -812,7 +833,7 @@ print(hamHist)
 #outputting to csv file
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_Ham_Test', 'w', newline='') as f:
+with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_HAM_TRANSFORM_medstep', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
