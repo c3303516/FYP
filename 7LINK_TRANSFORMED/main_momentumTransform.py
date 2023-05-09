@@ -5,16 +5,15 @@ import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
 from effectorFKM import FKM, endEffector
-from massMatrix_holonomic import massMatrix_holonomic
+from massMatrix import massMatrix
 # from dynamics import  gravTorque
 from dynamics import dynamics_test
-from dynamics_momentumTransform import dynamics_Transform
 from rk4 import rk4
 from params import robotParams
 from copy import deepcopy
-from scipy.linalg import solve_continuous_lyapunov
-from jax.scipy.linalg import sqrtm
+from scipy import integrate, linalg
 import sys
+
 import csv
 
 # import matplotlib.pyplot as plt
@@ -116,7 +115,7 @@ def hatSE3(x):
     ])
     return S
 
-def massMatrix_continuous(q_hat,qconstants):
+def massMatrix_continuous(q_hat,q_constants):
    
     dFcdq = jnp.array([
         [0.,0.,0.],
@@ -124,7 +123,7 @@ def massMatrix_continuous(q_hat,qconstants):
         [0.,0.,0.],
         [0.,0.,0.],
     ])
-    q_bold = dFcdq@q_hat + qconstants.at[0].get()
+    q_bold = dFcdq@q_hat + constants.at[0].get()
     # print(q_bold)
 
     q1 = q_bold.at[0].get()
@@ -400,9 +399,9 @@ def MqPrime(q_hat,constants):
         
     return Mprime
 
-def unravel(dMdq_temp, s):
+def unravel(dMdq, s):
     # could probably generalise this for any array
-    (m,n) = jnp.shape(dMdq_temp)
+    (m,n) = jnp.shape(dMdq)
     dMdq1 = jnp.zeros((n,n))
     dMdq2 = jnp.zeros((n,n))
     dMdq3 = jnp.zeros((n,n))
@@ -415,9 +414,9 @@ def unravel(dMdq_temp, s):
     for i in range(n):
         # print('i',i)        #i goes from 0-6
         # print('n*i',n*i)
-        dMdq1 = dMdq1.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),0].get())
-        dMdq2 = dMdq2.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),1].get())
-        dMdq3 = dMdq3.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),2].get())
+        dMdq1 = dMdq1.at[0:n,i].set(dMdq.at[n*i:n*(i+1),0].get())
+        dMdq2 = dMdq2.at[0:n,i].set(dMdq.at[n*i:n*(i+1),1].get())
+        dMdq3 = dMdq3.at[0:n,i].set(dMdq.at[n*i:n*(i+1),2].get())
         # dMdq4 = dMdq4.at[0:n,i].set(dMdq.at[n*i:n*(i+1),3].get())
         # dMdq5 = dMdq5.at[0:n,i].set(dMdq.at[n*i:n*(i+1),4].get())
         # dMdq6 = dMdq6.at[0:n,i].set(dMdq.at[n*i:n*(i+1),5].get())
@@ -430,7 +429,7 @@ def unravel(dMdq_temp, s):
 
     return dMdq1, dMdq2, dMdq3 
 
-def Vq(q_hat, qconstants):
+def Vq(q_hat,q_constants):
     #Function has to do FKM again to enable autograd to work
     dFcdq = jnp.array([
         [0.,0.,0.],
@@ -438,8 +437,7 @@ def Vq(q_hat, qconstants):
         [0.,0.,0.],
         [0.,0.,0.],
     ])
-    q_bold = dFcdq@q_hat + qconstants.at[0].get()
-    # print('con', constants.at[0].get())
+    q_bold = dFcdq@q_hat + constants.at[0].get()
     # print(q_bold) 
 
     q1 = q_bold.at[0].get()
@@ -550,84 +548,34 @@ def Vq(q_hat, qconstants):
     return V.at[0].get()
 
 
-def holonomicConstraint(q_hat, qconstants):
+def holonomicConstraint(q_hat,constants):
     dFcdq = jnp.array([
         [0.,0.,0.],
         [0.,0.,0.],
         [0.,0.,0.],
         [0.,0.,0.],
     ])
-    q_bold = dFcdq@q_hat + qconstants
+    q_bold = dFcdq@q_hat + constants
     q_bold = q_bold.at[0].get()         #remove the extra array
     return q_bold
 
-def ode_solve(xt,Tq_val,constants,dMdq_block,dTqinv_block,dVdq, dt, m,gC,contA, s):
+def ode_solve(xt,constants,dMdq_block,dVdq, dt, m,gC,contA, s):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     substep = dt/m
     for i in range(m):
-        # x_step= rk4(x_nextstep,Tq_val,substep,dynamics_test,gC,contA,dMdq_block,dTqinv_block,dVdq,s)
-        x_step= rk4(x_nextstep,Tq_val,substep,dynamics_Transform,gC,contA,dMdq_block,dTqinv_block,dVdq,s)
+        x_step= rk4(x_nextstep,constants,substep,dynamics_test,gC,contA,dMdq_block,dVdq,s)
         x_nextstep = x_step
         # print('xstep', x_step)
 
     x_finalstep = x_nextstep
     return x_finalstep
 
-def TqPrime(q_hat,qconstants,dMdq_blk):         #THis is depedent on q so this has to be calculated in the dynamics.
-    Mq = massMatrix_continuous(q_hat,qconstants)
-    A = jnp.array([
-        [0.,0.,0.],
-        [1.,0.,0.],
-        [0.,0.,0.],
-        [0.,1.,0.],
-        [0.,0.,0.],
-        [0.,0.,1.],
-        [0.,0.,0.],
-    ])
-    
-    Mq_hat = jnp.transpose(A)@Mq@A
 
-    Tqinv = jnp.real(sqrtm(Mq_hat))     #j components were 0, hope this doesn't fuck anything. I need real.
-    # jnp.set_printoptions(precision=15)
-
-    # print('Tqinv',Tqinv)
-
-    dMdq1 = dMdq_blk.at[0].get()
-    dMdq2 = dMdq_blk.at[1].get()
-    dMdq3 = dMdq_blk.at[2].get()
-    # print('dMdq1',dMdq1)
-
-    dTqinvdq1 = solve_continuous_lyapunov(Tqinv,dMdq1)
-    dTqinvdq2 = solve_continuous_lyapunov(Tqinv,dMdq2)
-    dTqinvdq3 = solve_continuous_lyapunov(Tqinv,dMdq3)
-
-    # print(dTqinvdq1)
-    # print(dTqinvdq2)
-    # print(dTqinvdq3)
-    
-
-    # Tqinvprime = jnp.zeros([Tqinv.size])
-    # m,n = jnp.shape(Tqinv)
-    # # print('shape of Mq_hat: n, m', n, m)
-    # # print('size Mq_hat', Mq_hat.size)
-    # for i in range(m):
-    #     # print('i', i)
-    #     Tqinvprime = Tqinvprime.at[n*i:n*(i+1)].set(Mq_hat.at[0:m,i].get())
-   
-    return dTqinvdq1
-
-def dTqinvdq(Tqinv,dMdqi):
-
-    dTqinvdqi = solve_continuous_lyapunov(Tqinv,dMdqi)
-
-    return dTqinvdqi
-
-
-## MAIN CODE STARTS HERE #################################
+## MAIN CODE STARTS HERE
 
 #Inital states
-q_hat1 = 5.*pi/6.
+q_hat1 = pi/12.
 q_hat2 = 0.
 q_hat3 = 0.
 
@@ -651,7 +599,6 @@ constants = jnp.array([                 #These are the positions the wrists are 
     [0.],
     [0.],
 ])
-# constants = constants.at[0].get()
 
 Mq = massMatrix_continuous(q_hat,constants)
 # print('Mq',Mq)
@@ -669,19 +616,9 @@ holonomicTransform = jnp.array([
 Mq_hat = jnp.transpose(holonomicTransform)@Mq@holonomicTransform        #for reduced order mass matrix
 # print(Mq_hat)
 
-# Mq_inv = linalg.inv(Mq_hat)
-# print('Mqinv', Mq_inv)
 
-# Tq = linalg.sqrtm(Mq_inv)           #needs to be root of inverse
-# print(Tq)
-
-# dTqdq = jacfwd(Tq)
-
-
-# def Tq_print(q_hat, constaints):
-
-# # print('size Mq', jnp.shape(Mq))
-# Mq_hat_P = MqPrime(q_hat,constants)
+# print('size Mq', jnp.shape(Mq))
+Mq_hat_P = MqPrime(q_hat,constants)
 
 # print(fake)
 # print('Mq_hat Prime', Mq_hat_P)
@@ -707,19 +644,15 @@ print('V', V)
 dV = jacfwd(Vq,argnums=0)
 print('dV', dV(q_hat,constants))
 
-# Tqinv_test = TqPrime(q_hat,constants)
-# print('Tqinv',Tqinv_test)
 
-# Tinvjac = jacfwd(TqPrime)
-# dTinvdq = Tinvjac(q_hat,constants)
-dTqdinvi = TqPrime(q_hat,constants,dMdq_block)
+test_M = jnp.array([[1 ,-4],
+                   [-4 , 16]])
 
-# print('dTqdinvi',dTqdinvi)
+test = linalg.sqrtm(Mq_hat)
+print(test)
 
-
-
-# print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
-# print(fake)
+print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
+print(fake)
 
 
 # SIMULATION/PLOT
@@ -727,9 +660,8 @@ dTqdinvi = TqPrime(q_hat,constants,dMdq_block)
 # This simulations uses p and q hat
 (m,n) = x0.shape
 
-s.constants = constants         #for holonomic transform
 dt = 0.01
-substeps = 1
+substeps = 10
 T = 1
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
@@ -742,77 +674,67 @@ xHist = jnp.zeros((6,l+1))
 hamHist = jnp.zeros(l)
 kinHist = jnp.zeros(l)
 potHist = jnp.zeros(l)
-# print('hamHist',hamHist)
+print('hamHist',hamHist)
 print('x0',x0)
 
 xHist = xHist.at[:,[0]].set(x0)
 controlHist = jnp.zeros((3,l))      #controlling 3 states
-
-jnp.set_printoptions(precision=15)
 
 for k in range(l):
     x = xHist.at[:,[k]].get()
     q = jnp.array([x.at[0,0].get(),
                    x.at[1,0].get(),
                    x.at[2,0].get()])
-    p = jnp.array([x.at[3,0].get(),        #This is currently returning p, not p0
+    p = jnp.array([x.at[3,0].get(),
                    x.at[4,0].get(),
                    x.at[5,0].get()])
     # print(q,p)
     
-    Mq_hat, Tq, Tqinv = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
-    # print(Mq_hat)
     # print('shape x0',jnp.shape(x0))
-    dMdq = massMatrixJac(q,constants)       #might inject this mq directly into the dynamics later
+    dMdq = massMatrixJac(q,constants)
     dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
-    # print('Tq',Tq)
-    # print('Tqinv',Tqinv)
-    # print(stop)
-    dTqinvdq1 = solve_continuous_lyapunov(Tqinv,dMdq1)
-    dTqinvdq2 = solve_continuous_lyapunov(Tqinv,dMdq2)
-    dTqinvdq3 = solve_continuous_lyapunov(Tqinv,dMdq3)
-
-    dTqinv_block = jnp.array([dTqinvdq1,dTqinvdq2,dTqinvdq3])
-    # print(type(dMdq1))
     
     dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
-    # print('block',dMdq_block)
     # V = Vq(q)
     dVdq = dV(q,constants)
     time = t.at[k].get()
 
     if controlActive == 0:          #reset if control action is down
         controlAction = jnp.zeros((3,1))
-    
+
     # print(x.at[:,0].get())
-    xtemp = ode_solve(x,Tq,constants,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
+    xtemp = ode_solve(x,constants,dMdq_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
     # xtemp = integrate.solve_ivp(dynamics_test,(0,dt),x.at[:,0].get(),method='RK45',args=(dMdq,dVdq, controlAction,s))      #needs this header: dynamics_test(t,x,dMdq,dVdq, controlAction,s):
     #         #has some dimension array stuff cause you need to pass in 1D y0 to function, extraction stuff in dynamicstest doesn't work.       This doesnt work with jit
     # print(xtemp)
     if jnp.isnan(xtemp.at[0,0].get()):
         print(xtemp.at[0,0].get())
-        print('NAN found, exiting loop')
-        break
-        # sys.exit('Code is stopped cause of NAN')
+        sys.exit('Code is stopped cause of NAN')
 
+    # q_bold = holonomicConstraint(q,constants)
+    # q_temp = jnp.array([
+    #         q_bold.at[0].get(),
+    #         q_hat.at[0].get(),
+    #         q_bold.at[1].get(),
+    #         q_hat.at[1].get(),
+    #         q_bold.at[2].get(),
+    #         q_hat.at[2].get(), 
+    #         q_bold.at[3].get(),
+    # ])
 
     xHist = xHist.at[:,[k+1]].set(xtemp)
     # print(xtemp)
     controlHist = controlHist.at[:,[k]].set(controlAction)
     # print('size of p and q', jnp.shape(p),jnp.shape(q))
 
-    # Mq_temp = massMatrix_continuous(q,constants)
-    # Mq_hat = jnp.transpose(holonomicTransform)@Mq_temp@holonomicTransform 
-    # kinTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p)))       #This is not correct as I have not done the transform back from momentum coords
-    kinTempTransformed = 0.5*(jnp.transpose((p))@(p))
+    Mq_temp = massMatrix_continuous(q,constants)
+    Mq_hat = jnp.transpose(holonomicTransform)@Mq_temp@holonomicTransform 
+    kinTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p)))
     potTemp = Vq(q,constants)
-    # hamTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p))) + Vq(q,constants)
-    hamTemp = 0.5*(jnp.transpose((p))@(p)) + potTemp
+    hamTemp = 0.5*(jnp.transpose(p)@(linalg.solve(Mq_hat,p))) + Vq(q,constants)
     # print(kinTemp)
-    # print(0.5*(jnp.transpose((Tq@p0))@(Tq@p0)) - kinTemp)
     hamHist = hamHist.at[k].set(hamTemp)
-    # kinHist = kinHist.at[k].set(kinTemp)
-    kinHist = kinHist.at[k].set(kinTempTransformed)
+    kinHist = kinHist.at[k].set(kinTemp)
     potHist = potHist.at[k].set(potTemp)
 
 
@@ -823,7 +745,7 @@ print(hamHist)
 #outputting to csv file
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_HAM_TRANSFORM__bigstep_grav2', 'w', newline='') as f:
+with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_ham_negativeGravity', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
