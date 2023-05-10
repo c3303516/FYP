@@ -17,7 +17,7 @@ from scipy.integrate import RK45
 
 
 @partial(jax.jit, static_argnames=['s'])
-def dynamics_test(x,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,controlAction,s): #need to put in constants
+def dynamics_test(x,dMdq_values,dVdq, gravComp,controlAction,s): #need to put in constants
     # sprime = deepcopy(s)
     # sprime = s
     q2 = x.at[(0,0)].get()      #make the full q vector
@@ -359,68 +359,8 @@ def dynamics_test(x,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,controlAction,
 
     # print('xdot', xdot)
 
-    #Dynamics after Transform
-
-    #dTinvdq        
-    Tqinv = jnp.real(sqrtm(Mq))           #This stuff is handeled in main loop
-    # Tq = linalg.solve(Tqinv,jnp.eye(3))
-    # # print('Tqinv',Tqinv)
-    # # print('Tq',Tq)
-    # # print('p0',p0)
-    # # p = linalg.solve(Tqinv,p0)      # where p = Tq*p0
-    # p = Tq@p0
-    # # print('p',p)
-    # dTqinvdq1 = solve_continuous_lyapunov(Tqinv,dMdq1)
-    # dTqinvdq2 = solve_continuous_lyapunov(Tqinv,dMdq2)
-    # dTqinvdq3 = solve_continuous_lyapunov(Tqinv,dMdq3)
-
-    dTqinvdq1 = dTqinvdq_values.at[0].get()
-    dTqinvdq2 = dTqinvdq_values.at[1].get()
-    dTqinvdq3 = dTqinvdq_values.at[2].get()
-    # dTqdq1 = dTqinvdq_values.at[3].get()
-    # dTqdq2 = dTqinvdq_values.at[4].get()
-    # dTqdq3 = dTqinvdq_values.at[5].get()
-
-    # p = Tq@p0
-    
-    # dTqinv_pdq1 = dTqinvdq1@p
-    # dTqinv_pdq2 = dTqinvdq2@p
-    # dTqinv_pdq3 = dTqinvdq3@p
-    # # print('dTqp',dTqinv_pdq1)
-    # # print('dTqp',dTqinv_pdq2)
-    # # print('dTqp',dTqinv_pdq3)
-
-    # temp = jnp.block([dTqinv_pdq1, dTqinv_pdq2, dTqinv_pdq3])
-    # tempT = jnp.transpose(temp)
-    # # print('temp',temp)
-    # tempc = tempT - temp
-
-    # Cq = Tq@tempc@Tq
-    # # print(Cq)
-
-    # # tempDq = linalg.solve(jnp.transpose(Tqinv),jnp.transpose(D))
-    # # Dq = linalg.solve(Tqinv,tempDq)
-    # Dq = Tq@D@Tq
-    # # print('Dq',Dq)
-
-    # #Hamiltonian
-    # dV = jnp.array([[dVdq1], [dVdq2], [dVdq3]])
-    # # print('dV',dV)
-
-    # # print('Cq-Dq', Cq-Dq)
-
-    # xdot_transform = jnp.block([        #transformed dynamic equations
-    #     [jnp.zeros((3,3)), Tq],
-    #     [-Tq,      Cq-Dq],
-    # ])@jnp.block([[dV],[p]])  + tau 
- 
-    # print('diff', xdot_transform[0:3] - xdot[0:3])
-
-    # print('Tq*p', Tq@p)
-    # print('dHdp', dHdp)
-    # print('diff' , (Tq@p)-dHdp)
+   
     return xdot
-    # return xdot_transform     #i  have realised this actually returns pdot. fix main loop to adjust
 
 def gravTorque(s,Jc2,Jc3,Jc4,Jc5,Jc6,Jc7,Jc8):
 

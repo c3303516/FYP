@@ -7,11 +7,13 @@ from jax import grad, jacobian, jacfwd
 from effectorFKM import FKM, endEffector
 from massMatrix_holonomic import massMatrix_holonomic
 from dynamics_momentumTransform import dynamics_Transform
+# from errorIKM import errorIKM #now in main!
 from rk4 import rk4
 from params import robotParams
 from copy import deepcopy
 from scipy.linalg import solve_continuous_lyapunov
 from jax.scipy.linalg import sqrtm
+from scipy.optimize import least_squares
 import sys
 import csv
 
@@ -472,12 +474,87 @@ def holonomicConstraint(q_hat, qconstants):
     q_bold = q_bold.at[0].get()         #remove the extra array
     return q_bold
 
-def ode_solve(xt,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq, dt, substep_no,gC,contA, s):
+
+
+def errorIKM(q, q0, xestar,struct):
+
+    #q0 is init condition. q is iteration to solve for xstar
+    #xstar is currently just positon, no angles
+    #EFFECTOR IKM
+    q2 = q[0]      #make the full q vector
+    q4 = q[1]
+    q6 = q[2]
+    # print('struct',struct)
+    q = jnp.array([     #this is qhat. q0 denotes before momentum transform
+        [q2, q4, q6]
+        ])
+
+    q = jnp.transpose(q)
+    qconstants = struct.constants
+    q_bold = qconstants.at[:,0].get()     #constrained variabless
+    # print('constants',q_bold)
+    
+    q1 = q_bold.at[0].get()
+    q3 = q_bold.at[1].get()
+    q5 = q_bold.at[2].get()
+    q7 = q_bold.at[3].get()
+
+    A01 = tranz(struct.l1)@rotx(pi)@rotz(q1)          
+    A12 = rotx(pi/2)@tranz(-struct.d1)@trany(-struct.l2)@rotz(q2)
+    A23 = rotx(-pi/2)@trany(struct.d2)@tranz(-struct.l3)@rotz(q3)
+    A34 = rotx(pi/2)@tranz(-struct.d2)@trany(-struct.l4)@rotz(q4)
+    A45 = rotx(-pi/2)@trany(struct.d2)@tranz(-struct.l5)@rotz(q5)
+    A56 = rotx(pi/2)@trany(-struct.l6)@rotz(q6)
+    A67 = rotx(-pi/2)@tranz(-struct.l7)@rotz(q7)
+    A7E = rotx(pi)@tranz(struct.l8)    
+    AEG = tranz(struct.lGripper)
+
+    A02 = A01@A12
+    A03 = A02@A23
+    A04 = A03@A34
+    A05 = A04@A45
+    A06 = A05@A56
+    A07 = A06@A67
+    A0E = A07@A7E
+    #end effector pose
+    r0E0 = A0E[0:3,[3]]
+    # print('q',q)
+    # print('q0',q0)
+
+    #note: q is the solver's 'guess', qstar is the trajectory
+    e_q = q - q0
+    # print('q0',q0)
+    # print('q',q)
+    pose_weights = jnp.array([1,1])
+    
+    e_pose = jnp.array([r0E0[0]-xestar[0] ,r0E0[2]-xestar[2]] )  #only position for now, no angles
+    sqK = 100000*jnp.diag(pose_weights)
+    q_weights = jnp.array([5,3,1])
+    sqW = 1*jnp.diag(q_weights)
+
+    sqM = jnp.block([
+        [sqW,               jnp.zeros((3, 2))],
+        [jnp.zeros((2,3)),  sqK              ]
+    ])
+    # print(sqM)
+
+#     s = effectorAnalyticalJacobian(q, param, s);      #this is here for future reference if I want to fix angles
+#     JA = s.JA;
+#     J = [sqW;
+#          sqK*JA];
+
+    e = sqM@jnp.block([[e_q],[e_pose]])
+                       #coudl use jacobian and feed through. might decrease time
+    # print(e)
+    e = e[:,0]           
+    return e
+
+def ode_solve(xt,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq, dt, substep_no,gC,x_tilde, s):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     substep = dt/substep_no
     for i in range(substep_no):
-        x_step= rk4(x_nextstep,dynamics_Transform,substep,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq,gC,contA,s)
+        x_step= rk4(x_nextstep,dynamics_Transform,substep,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq,gC,x_tilde,s)
         x_nextstep = x_step
 
     x_finalstep = x_nextstep
@@ -491,7 +568,7 @@ def ode_solve(xt,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq, dt, substep_no,gC,c
 ######################################## MAIN CODE STARTS HERE #################################
 
 #Inital states
-q_hat1 = 5.*pi/6.
+q_hat1 = 0.
 q_hat2 = 0.
 q_hat3 = 0.
 
@@ -563,9 +640,9 @@ dV = jacfwd(Vq,argnums=0)
 s.constants = constants         #for holonomic transform
 dt = 0.001
 substeps = 1
-T = 1
-controlActive = 0     #CONTROL
-gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
+T = 1.5
+controlActive = 1     #CONTROL
+gravComp = 1.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
 
 t = jnp.arange(0,T,dt)
 l = t.size
@@ -582,9 +659,32 @@ xHist = xHist.at[:,[0]].set(x0)
 controlHist = jnp.zeros((3,l))      #controlling 3 states
 
 #Tracking Problem
-q_d = jnp.array([q_hat1,q_hat2,q_hat3])
-q_d = jnp.transpose(q_d)
+#solve IKM to find q_d.
+def err(q, q_init_guess, x_d,params):
+    # print(q_init_guess)
+    # print('xd',x_d)
+    e = errorIKM(q, q_init_guess, x_d,params)
+    return e
+
+x_d_cart = jnp.array([[0.2],[0.],[0.8]])
+
+q_init_guess = jnp.zeros(3)
+print('q_guss',q_init_guess)
+
+
+result = least_squares(errorIKM,q_init_guess,args=(jnp.array([[0.],[0.],[0.]]),x_d_cart,s))
+q_d = result.x
+# print(q_d)
+# q_d = jnp.array([pi/6., -pi/3., pi/6.])
 q_tilde = q_hat - q_d
+p_d = jnp.zeros(3)
+x_d = jnp.block([
+    [q_d, p_d]
+])
+x_d = jnp.transpose(x_d)
+print(x_d)
+# print(stop)
+
 
 jnp.set_printoptions(precision=15)
 
@@ -619,9 +719,12 @@ for k in range(l):
     time = t.at[k].get()
 
     if controlActive == 0:          #reset if control action is down
-        controlAction = jnp.zeros((3,1))
+        err = jnp.zeros((6,1))
+    else: 
+        err = jnp.transpose(jnp.block([[q, p ]])) - x_d     #define x error
+        # print(err)
     
-    xtemp = ode_solve(x,Mq_hat,Tq,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, controlAction, s)     #try dormand prince. RK4 isn't good enough
+    xtemp = ode_solve(x,Mq_hat,Tq,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, err, s)     #try dormand prince. RK4 isn't good enough
 
     if jnp.isnan(xtemp.at[0,0].get()):
         print(xtemp.at[0,0].get())
@@ -631,7 +734,7 @@ for k in range(l):
 
     xHist = xHist.at[:,[k+1]].set(xtemp)
     # print(xtemp)
-    controlHist = controlHist.at[:,[k]].set(controlAction)
+    # controlHist = controlHist.at[:,[k]].set(controlAction)
     # print('size of p and q', jnp.shape(p),jnp.shape(q))
 
     kinTemp = 0.5*(jnp.transpose((p))@(p))

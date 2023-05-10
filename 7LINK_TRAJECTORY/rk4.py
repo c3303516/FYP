@@ -6,17 +6,17 @@ from functools import partial
 # from main import dynamics
 
 # @partial(jax.jit, static_argnames=['s'])
-def rk4(xt,func,dt,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,contA, s):
+def rk4(xt,func,dt,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,x_tilde, s):
 # def rk4(xt,func,dt,*arguments):
     t = 1
-    k1 = func(xt,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,contA, s)
+    k1 = func(xt,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,x_tilde, s)
     # print('A071', s.A07)
-    k2 = func(xt + (k1 * dt) / 2,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,contA, s)
+    k2 = func(xt + (k1 * dt) / 2,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,x_tilde, s)
     # print('A072', s.A07)
-    k3 = func(xt + (k2 * dt) / 2,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,contA, s)
+    k3 = func(xt + (k2 * dt) / 2,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,x_tilde, s)
     # print('A073', s.A07)
-    k4 = func(xt + (k3 * dt),Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,contA, s)
-    # print(contA)
+    k4 = func(xt + (k3 * dt),Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,x_tilde, s)
+    # print(x_tilde)
 
     # k1 = func(xt,arguments)
     # # print('A071', s.A07)
