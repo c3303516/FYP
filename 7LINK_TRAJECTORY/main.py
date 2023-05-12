@@ -1,4 +1,4 @@
-
+import jax
 from jax.config import config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -14,6 +14,7 @@ from copy import deepcopy
 from scipy.linalg import solve_continuous_lyapunov
 from jax.scipy.linalg import sqrtm
 from scipy.optimize import least_squares
+from functools import partial
 import sys
 import csv
 
@@ -475,10 +476,10 @@ def holonomicConstraint(q_hat, qconstants):
     return q_bold
 
 
-
+@partial(jax.jit, static_argnames=['struct'])
 def errorIKM(q, q0, xestar,struct):
 
-    #q0 is init condition. q is iteration to solve for xstar
+    #q0 is start point. q is iteration to solve for xstar
     #xstar is currently just positon, no angles
     #EFFECTOR IKM
     q2 = q[0]      #make the full q vector
@@ -518,17 +519,12 @@ def errorIKM(q, q0, xestar,struct):
     A0E = A07@A7E
     #end effector pose
     r0E0 = A0E[0:3,[3]]
-    # print('q',q)
-    # print('q0',q0)
 
-    #note: q is the solver's 'guess', qstar is the trajectory
-    e_q = q - q0
-    # print('q0',q0)
-    # print('q',q)
     pose_weights = jnp.array([1,1])
-    
-    e_pose = jnp.array([r0E0[0]-xestar[0] ,r0E0[2]-xestar[2]] )  #only position for now, no angles
     sqK = 100000*jnp.diag(pose_weights)
+    e_pose = jnp.array([r0E0[0]-xestar[0] ,r0E0[2]-xestar[2]] )  #penalised error from xe to xestar
+
+    e_q = q - q0            #penalises movement from q0
     q_weights = jnp.array([5,3,1])
     sqW = 1*jnp.diag(q_weights)
 
@@ -549,6 +545,56 @@ def errorIKM(q, q0, xestar,struct):
     e = e[:,0]           
     return e
 
+# def err(q, q_init_guess, x_d,params):       #this isn't used???
+#     # print(q_init_guess)
+#     # print('xd',x_d)
+#     e = errorIKM(q, q_init_guess, x_d,params)
+#     return e
+
+def solveIKM(traj,init_guess,params):
+    #solves for displacement only
+    guess = init_guess
+    print(jnp.shape(guess))
+    m,n = jnp.shape(traj)
+    # print('m,n', m,n)
+    q_d = jnp.zeros((m,n))
+
+    bound = ([s.qlower.at[1].get(),s.qlower.at[3].get(),s.qlower.at[5].get()],[s.qupper.at[1].get(),s.qupper.at[3].get(),s.qupper.at[5].get()])
+
+
+    for i in range(n):
+        point = traj.at[0:3,i].get()
+        # errorIKM(q, q0, xestar,struct):       #function handle for ref
+        q0 = jnp.transpose(jnp.array([guess]))
+        # print(jnp.shape(q0))
+        result = least_squares(errorIKM,guess,bounds=bound,args=(q0,point,s))        #starts guess at guess, and penalised movement from last q_d point
+        guess = result.x
+        q_d = q_d.at[:,i].set(guess)
+        # print(q_d.at[:,i].get())
+
+    return q_d
+
+
+def planar_circle(freq,amp,origin, t):
+    #plane is xz plane.
+    x0 = origin.at[0].get()
+    z0 = origin.at[1].get()
+
+    x0_vec = x0*jnp.ones(jnp.size(t))
+    z0_vec = z0*jnp.ones(jnp.size(t))
+    # print('vec',x0_vec)
+
+    x = amp*sin(2*pi*freq*t) + x0
+    z = amp*cos(2*pi*freq*t) + z0
+
+    vx = 2*amp*pi*freq*cos(2*pi*freq*t)
+    vz = -2*amp*pi*freq*sin(2*pi*freq*t)
+
+    xe = jnp.array([x,jnp.zeros(jnp.size(t)), z])
+    ve = jnp.array([vx,jnp.zeros(jnp.size(t)), vz])
+    return xe,ve
+
+
 def ode_solve(xt,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq, dt, substep_no,gC,x_tilde, s):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
@@ -559,6 +605,16 @@ def ode_solve(xt,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq, dt, substep_no,gC,x
 
     x_finalstep = x_nextstep
     return x_finalstep
+
+def create_qdot(q_d,t_span):
+    #this function approxmates xdot from IKM solution q_d. The final momentum will always be zero, as the approxmition will shorten the array
+    l = jnp.size(t_span)
+    qdot = jnp.zeros(jnp.shape(q_d))
+    # print('qdotsize',jnp.shape(qdot))
+
+    for i in range(l):
+        qdot = qdot.at[:,[i]].set(q_d.at[:,[i+1]].get()- q_d.at[:,[i]].get())
+    return qdot
 
 
 ######################################## MAIN CODE STARTS HERE #################################
@@ -623,9 +679,6 @@ dMdq_block = jnp.array([dMdqhat1, dMdqhat2, dMdqhat3])
 V = Vq(q_hat,constants)
 print('V', V)
 dV = jacfwd(Vq,argnums=0)
-# print('dV', dV(q_hat,constants))
-
-# dTqdinvi = TqPrime(q_hat,constants,dMdq_block)
 
 ###################################################################################################
 # print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
@@ -653,37 +706,38 @@ hamHist = jnp.zeros(l)
 kinHist = jnp.zeros(l)
 potHist = jnp.zeros(l)
 # print('hamHist',hamHist)
-print('x0',x0)
+# print('x0',x0)
 
 xHist = xHist.at[:,[0]].set(x0)
 controlHist = jnp.zeros((3,l))      #controlling 3 states
 
 #Tracking Problem
 #solve IKM to find q_d.
-def err(q, q_init_guess, x_d,params):
-    # print(q_init_guess)
-    # print('xd',x_d)
-    e = errorIKM(q, q_init_guess, x_d,params)
-    return e
 
-x_d_cart = jnp.array([[0.2],[0.],[0.8]])
+# x_d_cart = jnp.array([[0.2],[0.],[0.8]])        #define point to reach
+
+circle_origin = jnp.array([0.,0.8])            #define circle parameters
+frequency = 1.
+circle_radius = 0.2
+xe, ve = planar_circle(frequency,circle_radius,circle_origin,t)       #return cartesian coords for circle path.
+
+
+# print(x_d)
 
 q_init_guess = jnp.zeros(3)
-print('q_guss',q_init_guess)
+# print('q_guss',q_init_guess)
 
 
-result = least_squares(errorIKM,q_init_guess,args=(jnp.array([[0.],[0.],[0.]]),x_d_cart,s))
-q_d = result.x
-# print(q_d)
-# q_d = jnp.array([pi/6., -pi/3., pi/6.])
-q_tilde = q_hat - q_d
-p_d = jnp.zeros(3)
-x_d = jnp.block([
-    [q_d, p_d]
-])
-x_d = jnp.transpose(x_d)
-print(x_d)
+q_d = solveIKM(xe,q_init_guess,s)      #solve IKM so trajectory is changed to generalised idsplacement coordinates.
+print('q_d',q_d)
+# print(q_d.at[:,0].get())
+dq_d = create_qdot(q_d,t)
+
+# print(dq_d)
 # print(stop)
+# q_d = jnp.array([pi/6., -pi/3., pi/6.])
+# q_tilde = q_hat - q_d
+# p_d = jnp.zeros(3)                      #no momentum error
 
 
 jnp.set_printoptions(precision=15)
@@ -698,7 +752,7 @@ for k in range(l):
                    x.at[5,0].get()])
     # print(q,p)
     
-    Mq_hat, Tq, Tqinv = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+    Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 
     dMdq = massMatrixJac(q,constants)       #might inject this mq directly into the dynamics later
     dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
@@ -721,8 +775,9 @@ for k in range(l):
     if controlActive == 0:          #reset if control action is down
         err = jnp.zeros((6,1))
     else: 
-        err = jnp.transpose(jnp.block([[q, p ]])) - x_d     #define x error
-        # print(err)
+        p_d = Tqinv@dq_d.at[:,k].get()
+        x_d = jnp.block([[q_d.at[:,k].get(), p_d]])
+        err = jnp.transpose(jnp.block([[q, p ]])) - jnp.transpose(x_d)     #define error
     
     xtemp = ode_solve(x,Mq_hat,Tq,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, err, s)     #try dormand prince. RK4 isn't good enough
 
@@ -756,7 +811,7 @@ print(hamHist)
 ############### outputting to csv file#####################
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_TRAJECTORY/data/setpoint', 'w', newline='') as f:
+with open('/root/FYP/7LINK_TRAJECTORY/data/circularpath_veltrack2', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

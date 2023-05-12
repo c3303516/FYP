@@ -253,11 +253,17 @@ def massMatrix_holonomic(q0, s):
         [0.,0.,0.],
     ])
 
+
+    Jc8_hat = Jc8@holonomicTransform  #only care about these? not entirely sure if this works
+    Jc = Jc8_hat.at[0:3,:].get()
+    # print(Jc8_hat)
+    # print(stop)
+
     Mq = jnp.transpose(holonomicTransform)@Mq7@holonomicTransform  #transform needed to produce Mq_hat
     Tqinv = jnp.real(sqrtm(Mq))
     Tq = linalg.solve(Tqinv,jnp.eye(3)) 
 
-    return Mq, Tq, Tqinv
+    return Mq, Tq, Tqinv, Jc
 
     
 
