@@ -521,11 +521,11 @@ def errorIKM(q, q0, xestar,struct):
     r0E0 = A0E[0:3,[3]]
 
     pose_weights = jnp.array([1,1])
-    sqK = 100000*jnp.diag(pose_weights)
+    sqK = 10000*jnp.diag(pose_weights)                          #weights on x and z error
     e_pose = jnp.array([r0E0[0]-xestar[0] ,r0E0[2]-xestar[2]] )  #penalised error from xe to xestar
 
     e_q = q - q0            #penalises movement from q0
-    q_weights = jnp.array([5,3,1])
+    q_weights = jnp.array([1,3,5])              #penalises specific joint movement. Currently set to use base joint more
     sqW = 1*jnp.diag(q_weights)
 
     sqM = jnp.block([
@@ -554,7 +554,7 @@ def errorIKM(q, q0, xestar,struct):
 def solveIKM(traj,init_guess,params):
     #solves for displacement only
     guess = init_guess
-    print(jnp.shape(guess))
+    # print(jnp.shape(guess))
     m,n = jnp.shape(traj)
     # print('m,n', m,n)
     q_d = jnp.zeros((m,n))
@@ -584,7 +584,7 @@ def planar_circle(freq,amp,origin, t):
     z0_vec = z0*jnp.ones(jnp.size(t))
     # print('vec',x0_vec)
 
-    x = amp*sin(2*pi*freq*t) + x0
+    x = amp*sin(2*pi*freq*t) + x0       #check this
     z = amp*cos(2*pi*freq*t) + z0
 
     vx = 2*amp*pi*freq*cos(2*pi*freq*t)
@@ -595,12 +595,12 @@ def planar_circle(freq,amp,origin, t):
     return xe,ve
 
 
-def ode_solve(xt,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq, dt, substep_no,gC,x_tilde, s):
+def ode_solve(xt,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq, dt, substep_no,gC,x_tilde,Kp,Kd,alpha):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     substep = dt/substep_no
     for i in range(substep_no):
-        x_step= rk4(x_nextstep,dynamics_Transform,substep,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq,gC,x_tilde,s)
+        x_step= rk4(x_nextstep,dynamics_Transform,substep,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq,gC,x_tilde,Kp,Kd,alpha)
         x_nextstep = x_step
 
     x_finalstep = x_nextstep
@@ -663,17 +663,17 @@ holonomicTransform = jnp.array([
         [0.,0.,0.],
     ])
 # print(Mq)
-Mq_hat = jnp.transpose(holonomicTransform)@Mq@holonomicTransform        #for reduced order mass matrix
-print(Mq_hat)
+# Mq_hat = jnp.transpose(holonomicTransform)@Mq@holonomicTransform        #for reduced order mass matrix
+# print(Mq_hat)
 
 massMatrixJac = jacfwd(MqPrime)
-dMdqhat = massMatrixJac(q_hat,constants)
+# dMdqhat = massMatrixJac(q_hat,constants)
 # print(dMdqhat)
 # print('size dMdq', jnp.shape(dMdqhat))
 
-dMdqhat1, dMdqhat2, dMdqhat3 = unravel(dMdqhat, s)
+# dMdqhat1, dMdqhat2, dMdqhat3 = unravel(dMdqhat, s)
 
-dMdq_block = jnp.array([dMdqhat1, dMdqhat2, dMdqhat3])
+# dMdq_block = jnp.array([dMdqhat1, dMdqhat2, dMdqhat3])
 # print('dMdq:', dMdq_block)
 
 V = Vq(q_hat,constants)
@@ -693,9 +693,14 @@ dV = jacfwd(Vq,argnums=0)
 s.constants = constants         #for holonomic transform
 dt = 0.001
 substeps = 1
-T = 1.5
+T = 1
 controlActive = 1     #CONTROL
 gravComp = 1.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
+
+# #Define tuning parameters
+alpha = 0.1
+Kp = 100.*jnp.eye(3)
+Kd = 10.*jnp.eye(3)
 
 t = jnp.arange(0,T,dt)
 l = t.size
@@ -779,7 +784,7 @@ for k in range(l):
         x_d = jnp.block([[q_d.at[:,k].get(), p_d]])
         err = jnp.transpose(jnp.block([[q, p ]])) - jnp.transpose(x_d)     #define error
     
-    xtemp = ode_solve(x,Mq_hat,Tq,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, err, s)     #try dormand prince. RK4 isn't good enough
+    xtemp = ode_solve(x,Mq_hat,Tq,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, err,Kp,Kd,alpha)     #try dormand prince. RK4 isn't good enough
 
     if jnp.isnan(xtemp.at[0,0].get()):
         print(xtemp.at[0,0].get())
@@ -810,12 +815,14 @@ print(hamHist)
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
+controlConstants = ['Kp',Kp,'Kd',Kd,'alpha',alpha]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_TRAJECTORY/data/circularpath_veltrack2', 'w', newline='') as f:
+with open('/root/FYP/7LINK_TRAJECTORY/data/circularpath_veltrack_longsims2', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
     writer.writerow(details)
+    writer.writerow(controlConstants)
     writer.writerow(header)
 
     # writer.writerow(['Time', t])

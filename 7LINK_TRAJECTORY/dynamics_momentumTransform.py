@@ -14,8 +14,10 @@ from jax import lax
 import csv
 
 
-@partial(jax.jit, static_argnames=['s'])
-def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,s): #need to put in constants
+# @partial(jax.jit, static_argnames=['s'])
+# def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,s): #need to put in constants
+@jax.jit
+def dynamics_Transform(x,Tq,dTqinvdq_values,dVdq, gravComp,x_err,Kp,Kd,alpha): #need to put in constants
 
     q2 = x.at[(0,0)].get()      #make the full q vector
     q4 = x.at[(1,0)].get()
@@ -37,7 +39,7 @@ def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,
 
     
     # Gravitation torque
-    g0 = jnp.array([[0],[0],[-s.g]])
+    # g0 = jnp.array([[0],[0],[-s.g]])
 
     dVdq1 = dVdq.at[0].get()
     dVdq2 = dVdq.at[1].get()
@@ -86,10 +88,6 @@ def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,
     # print(q_tilde,p_tilde)
 
     #build control law v
-    #define tuning parameters
-    alpha = 0.1
-    Kp = 1000.*jnp.eye(3)
-    Kd = 10.*jnp.eye(3)
     D_hat = jnp.zeros((3,3))
     v = alpha*(Cq - D_hat - Kd)@Kp@(q_tilde + alpha*p_tilde) - Tq@Kp@(q_tilde + alpha*p_tilde) - Kd@p_tilde
     # print(v)
@@ -123,43 +121,43 @@ def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,
 
     return xdot_transform     #i might not have realised this actually returns pdot. fix main loop to adjust
 
-def gravTorque(s,Jc2,Jc3,Jc4,Jc5,Jc6,Jc7,Jc8):
+# def gravTorque(s,Jc2,Jc3,Jc4,Jc5,Jc6,Jc7,Jc8):
 
-    g0 = jnp.array([[0],[0],[-s.g]])
-    # g0 = s.g0
-    tauc2 = jnp.block([
-        [jnp.multiply(s.m2,g0)],
-        [jnp.zeros((3,1))]
-    ])
-    tauc3 = jnp.block([
-        [jnp.multiply(s.m3,g0)],
-        [jnp.zeros((3,1))]
-    ])
-    tauc4 = jnp.block([
-        [jnp.multiply(s.m4,g0)],
-        [jnp.zeros((3,1))]
-    ])
-    tauc5 = jnp.block([
-        [jnp.multiply(s.m5,g0)],
-        [jnp.zeros((3,1))]
-    ])
-    tauc6 = jnp.block([
-        [jnp.multiply(s.m6,g0)],
-        [jnp.zeros((3,1))]
-    ])
-    tauc7 = jnp.block([
-        [jnp.multiply(s.m7,g0)],
-        [jnp.zeros((3,1))]
-    ])
-    tauc8 = jnp.block([
-        [jnp.multiply(s.m8,g0)],
-        [jnp.zeros((3,1))]
-    ])
+#     g0 = jnp.array([[0],[0],[-s.g]])
+#     # g0 = s.g0
+#     tauc2 = jnp.block([
+#         [jnp.multiply(s.m2,g0)],
+#         [jnp.zeros((3,1))]
+#     ])
+#     tauc3 = jnp.block([
+#         [jnp.multiply(s.m3,g0)],
+#         [jnp.zeros((3,1))]
+#     ])
+#     tauc4 = jnp.block([
+#         [jnp.multiply(s.m4,g0)],
+#         [jnp.zeros((3,1))]
+#     ])
+#     tauc5 = jnp.block([
+#         [jnp.multiply(s.m5,g0)],
+#         [jnp.zeros((3,1))]
+#     ])
+#     tauc6 = jnp.block([
+#         [jnp.multiply(s.m6,g0)],
+#         [jnp.zeros((3,1))]
+#     ])
+#     tauc7 = jnp.block([
+#         [jnp.multiply(s.m7,g0)],
+#         [jnp.zeros((3,1))]
+#     ])
+#     tauc8 = jnp.block([
+#         [jnp.multiply(s.m8,g0)],
+#         [jnp.zeros((3,1))]
+#     ])
 
-    gq = jnp.transpose(-((jnp.transpose(tauc2))@Jc2 + (jnp.transpose(tauc3))@Jc3 + (jnp.transpose(tauc4))@Jc4 + (jnp.transpose(tauc5))@Jc5 + (jnp.transpose(tauc6))@Jc6 + (jnp.transpose(tauc7))@Jc7 + (jnp.transpose(tauc8))@Jc8))
-    return gq
+#     gq = jnp.transpose(-((jnp.transpose(tauc2))@Jc2 + (jnp.transpose(tauc3))@Jc3 + (jnp.transpose(tauc4))@Jc4 + (jnp.transpose(tauc5))@Jc5 + (jnp.transpose(tauc6))@Jc6 + (jnp.transpose(tauc7))@Jc7 + (jnp.transpose(tauc8))@Jc8))
+#     return gq
 
-def inputTorque(q,gq, s):
+# def inputTorque(q,gq, s):
 
     # gq = gravTorque(s)
 
