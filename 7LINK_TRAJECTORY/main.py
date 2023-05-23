@@ -22,6 +22,7 @@ class self:
     def __init___(self):
         return 'initialised'
 
+################ HOMOGENEOUS TRANSFORMS ###############################
 
 def skew(u):
     ans = jnp.block([[0., -u[2], u[1]],
@@ -35,21 +36,21 @@ def hatSE3(x):
 
 
 def rotx(mu):
-    A = jnp.array([[1., 0., 0., 0.],
+    A = jnp.block([[1., 0., 0., 0.],
                    [0., jnp.cos(mu), -jnp.sin(mu), 0.],
                    [0., jnp.sin(mu), jnp.cos(mu), 0.],
                    [0., 0., 0., 1.]])
     return A
 
 def roty(mu):
-    A = jnp.array([[jnp.cos(mu), 0., jnp.sin(mu), 0.],
+    A = jnp.block([[jnp.cos(mu), 0., jnp.sin(mu), 0.],
                    [0., 1., 0., 0.],
                    [-jnp.sin(mu), 0., jnp.cos(mu), 0.],
                    [0., 0., 0., 1.]])
     return A
 
 def rotz(mu):
-    A = jnp.array([[jnp.cos(mu), -jnp.sin(mu), 0., 0.],
+    A = jnp.block([[jnp.cos(mu), -jnp.sin(mu), 0., 0.],
                    [jnp.sin(mu), jnp.cos(mu), 0., 0.],
                    [0., 0., 1., 0.],
                    [0., 0., 0., 1.]])
@@ -104,6 +105,8 @@ def hatSE3(x):
     ])
     return S
 
+####### MASS MATRIX #############
+
 def massMatrix_continuous(q_hat,qconstants):
    
     dFcdq = jnp.array([
@@ -115,14 +118,15 @@ def massMatrix_continuous(q_hat,qconstants):
     q_bold = dFcdq@q_hat + qconstants.at[0].get()
     # print(q_bold)
 
-    q1 = q_bold.at[0].get()
-    q3 = q_bold.at[1].get()
-    q5 = q_bold.at[2].get()
-    q7 = q_bold.at[3].get()
+    q1 = q_bold.at[0,0].get()
+    q3 = q_bold.at[1,0].get()
+    q5 = q_bold.at[2,0].get()
+    q7 = q_bold.at[3,0].get()
 
-    q2 = q_hat.at[0].get()
-    q4 = q_hat.at[1].get()
-    q6 = q_hat.at[2].get()
+    q2 = q_hat.at[0,0].get()
+    q4 = q_hat.at[1,0].get()
+    q6 = q_hat.at[2,0].get()
+    # print('q1',q1)
 
     A01 = tranz(s.l1)@rotx(pi)@rotz(q1)          
     A12 = rotx(pi/2)@tranz(-s.d1)@trany(-s.l2)@rotz(q2)
@@ -191,6 +195,8 @@ def massMatrix_continuous(q_hat,qconstants):
     A0c7 = A06@tranx(c7x)@trany(c7y)@tranz(c7z)
     A0c8 = A07@tranx(c8x)@trany(c8y)@tranz(c8z)
     A0cG = A0E@tranz(cGz)
+
+
 
             # Geometric Jacobians
     R01 = A01[0:3,0:3]     #rotation matrices
@@ -328,6 +334,8 @@ def massMatrix_continuous(q_hat,qconstants):
 
     return Mq
     
+
+################## DMDQ FUNCTIONS ##########################
 def MqPrime(q_hat,constants):
 
     Mq = massMatrix_continuous(q_hat,constants)
@@ -343,7 +351,9 @@ def MqPrime(q_hat,constants):
     
     Mq_hat = jnp.transpose(A)@Mq@A
 
-    Mprime = jnp.zeros([Mq_hat.size])
+    Mprime = jnp.zeros(Mq_hat.size)
+    # print('sizeMq', jnp.shape(Mq_hat))
+    # print('sizeMprime',jnp.shape(Mprime))
     m,n = jnp.shape(Mq_hat)
     for i in range(m):
         # print('i', i)
@@ -353,17 +363,18 @@ def MqPrime(q_hat,constants):
 
 def unravel(dMdq_temp, s):
     # could probably generalise this for any array
-    (m,n) = jnp.shape(dMdq_temp)
+    (m,n,l) = jnp.shape(dMdq_temp)
     dMdq1 = jnp.zeros((n,n))
     dMdq2 = jnp.zeros((n,n))
     dMdq3 = jnp.zeros((n,n))
+    # print('dmdqshpae',jnp.shape(dMdq1))
 
     for i in range(n):
         # print('i',i)        #i goes from 0-6
         # print('n*i',n*i)
-        dMdq1 = dMdq1.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),0].get())
-        dMdq2 = dMdq2.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),1].get())
-        dMdq3 = dMdq3.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),2].get())
+        dMdq1 = dMdq1.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),0,0].get())
+        dMdq2 = dMdq2.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),1,0].get())
+        dMdq3 = dMdq3.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),2,0].get())
 
 
     return dMdq1, dMdq2, dMdq3 
@@ -475,6 +486,7 @@ def holonomicConstraint(q_hat, qconstants):
     q_bold = q_bold.at[0].get()         #remove the extra array
     return q_bold
 
+############################# TRACKING PROBLEM ###################################
 
 @partial(jax.jit, static_argnames=['struct'])
 def errorIKM(q, q0, xestar,struct):
@@ -551,6 +563,7 @@ def errorIKM(q, q0, xestar,struct):
 #     e = errorIKM(q, q_init_guess, x_d,params)
 #     return e
 
+
 def solveIKM(traj,init_guess,params):
     #solves for displacement only
     guess = init_guess
@@ -617,6 +630,59 @@ def create_qdot(q_d,t_span):
     return qdot
 
 
+################################# OBSERVER #######################################
+
+def C_SYS(p_sym,p_sym2,Tq,dTqinvdq_val):
+    dTqinvdq1 = dTqinvdq_val.at[0].get()
+    dTqinvdq2 = dTqinvdq_val.at[1].get()
+    dTqinvdq3 = dTqinvdq_val.at[2].get()
+    # print('p',p)
+    dTqinv_phatdq1 = dTqinvdq1@p_sym
+    dTqinv_phatdq2 = dTqinvdq2@p_sym
+    dTqinv_phatdq3 = dTqinvdq3@p_sym
+    # print('dTqinv',dTqinv_phatdq1)
+    temphat = jnp.block([dTqinv_phatdq1, dTqinv_phatdq2, dTqinv_phatdq3])
+    temphatT = jnp.transpose(temphat)
+    # print('temp',temp)
+    Ctemp = temphatT - temphat
+    # print(Ctemp)
+    Cq_phat = Tq@Ctemp@Tq
+
+    return Cq_phat@p_sym2
+
+def observer(q,phat,Tq,dTqinvdq_values):
+
+    #observer needs to be constructed in main. efforts will go there
+
+    #C(q) is found as part of the dynamic model, same as Tq. However, now need in terms of phat, not p. 
+
+    #compute \barC matrix
+    pbar = jnp.array([[1.],[1.],[1.]])
+
+    CbSYM = jacfwd(C_SYS,argnums=0)
+
+    print(CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values))
+
+    # u0 = 0
+    # xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u-u0)
+
+    # phi = phi + k_obv           #this happens for an 'instantaneos change'
+    # xp = xp - k_obv*q
+
+    # phat = xp + phi*q       #estimation of momentum states
+
+
+    return  
+
+
+
+
+
+
+
+
+
+
 ######################################## MAIN CODE STARTS HERE #################################
 ######################################## MAIN CODE STARTS HERE #################################
 ######################################## MAIN CODE STARTS HERE #################################
@@ -628,11 +694,12 @@ q_hat1 = 0.
 q_hat2 = 0.
 q_hat3 = 0.
 
-q_hat = jnp.array([q_hat1,q_hat2,q_hat3])
+q_hat = jnp.array([[q_hat1,q_hat2,q_hat3]])
 p_hat = jnp.array([0.,0.,0.])
 
 x0 = jnp.block([[q_hat,p_hat]])
 x0 = jnp.transpose(x0)
+print('Initial States', x0)
 # print('shape x0',jnp.shape(x0))
 
 q_hat = jnp.transpose(q_hat)
@@ -667,7 +734,7 @@ holonomicTransform = jnp.array([
 # print(Mq_hat)
 
 massMatrixJac = jacfwd(MqPrime)
-# dMdqhat = massMatrixJac(q_hat,constants)
+dMdqhat = massMatrixJac(q_hat,constants)
 # print(dMdqhat)
 # print('size dMdq', jnp.shape(dMdqhat))
 
@@ -676,9 +743,10 @@ massMatrixJac = jacfwd(MqPrime)
 # dMdq_block = jnp.array([dMdqhat1, dMdqhat2, dMdqhat3])
 # print('dMdq:', dMdq_block)
 
-V = Vq(q_hat,constants)
-print('V', V)
+# V = Vq(q_hat,constants)
+# print('V', V)
 dV = jacfwd(Vq,argnums=0)
+
 
 ###################################################################################################
 # print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
@@ -693,19 +761,20 @@ dV = jacfwd(Vq,argnums=0)
 s.constants = constants         #for holonomic transform
 dt = 0.001
 substeps = 1
-T = 1
+T = 0.3
 controlActive = 1     #CONTROL
 gravComp = 1.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
 
 # #Define tuning parameters
-alpha = 0.1
-Kp = 100.*jnp.eye(3)
-Kd = 10.*jnp.eye(3)
+alpha = 0.
+Kp = 1000.*jnp.eye(3)
+Kd = 1000.*jnp.eye(3)
 
 t = jnp.arange(0,T,dt)
 l = t.size
 
 xHist = jnp.zeros((6,l+1))
+xeHist = jnp.zeros((6,l))
 # print('xHist',xHist)
 hamHist = jnp.zeros(l)
 kinHist = jnp.zeros(l)
@@ -719,7 +788,7 @@ controlHist = jnp.zeros((3,l))      #controlling 3 states
 #Tracking Problem
 #solve IKM to find q_d.
 
-# x_d_cart = jnp.array([[0.2],[0.],[0.8]])        #define point to reach
+x_d_cart = jnp.array([[0.5],[0.],[0.5]])        #define point to reach
 
 circle_origin = jnp.array([0.,0.8])            #define circle parameters
 frequency = 1.
@@ -727,17 +796,18 @@ circle_radius = 0.2
 xe, ve = planar_circle(frequency,circle_radius,circle_origin,t)       #return cartesian coords for circle path.
 
 
-# print(x_d)
+# print(jnp.shape(xe))
 
 q_init_guess = jnp.zeros(3)
 # print('q_guss',q_init_guess)
 
-
+#POINT TRACK
+# q_d = solveIKM(x_d_cart,q_init_guess,s) 
+#TRAJECTORY TRACK
 q_d = solveIKM(xe,q_init_guess,s)      #solve IKM so trajectory is changed to generalised idsplacement coordinates.
-print('q_d',q_d)
+# print('q_d',q_d)
 # print(q_d.at[:,0].get())
 dq_d = create_qdot(q_d,t)
-
 # print(dq_d)
 # print(stop)
 # q_d = jnp.array([pi/6., -pi/3., pi/6.])
@@ -749,17 +819,18 @@ jnp.set_printoptions(precision=15)
 
 for k in range(l):
     x = xHist.at[:,[k]].get()
-    q = jnp.array([x.at[0,0].get(),
-                   x.at[1,0].get(),
-                   x.at[2,0].get()])
-    p = jnp.array([x.at[3,0].get(),        #This is currently returning p, not p0
-                   x.at[4,0].get(),
-                   x.at[5,0].get()])
+    q = jnp.array([[x.at[0,0].get()],
+                   [x.at[1,0].get()],
+                   [x.at[2,0].get()]])
+    p = jnp.array([[x.at[3,0].get()],        #This is currently returning p, not p0
+                   [x.at[4,0].get()],
+                   [x.at[5,0].get()]])
     # print(q,p)
     
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
-
+    print('q',q)
     dMdq = massMatrixJac(q,constants)       #might inject this mq directly into the dynamics later
+    print('shape dMdq', jnp.shape(dMdq))
     dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
     # print('Tq',Tq)
     # print('Tqinv',Tqinv)
@@ -777,12 +848,15 @@ for k in range(l):
     dVdq = dV(q,constants)
     time = t.at[k].get()
 
+    
+    observer(q,p,Tq,dTqinv_block)
+
     if controlActive == 0:          #reset if control action is down
         err = jnp.zeros((6,1))
     else: 
-        p_d = Tqinv@dq_d.at[:,k].get()
+        p_d = Tqinv@dq_d.at[:,k].get()                      #should slow down the ocntroller obersver pair here 
         x_d = jnp.block([[q_d.at[:,k].get(), p_d]])
-        err = jnp.transpose(jnp.block([[q, p ]])) - jnp.transpose(x_d)     #define error
+        err = jnp.block([[q], [p]]) - jnp.transpose(x_d)     #define error
     
     xtemp = ode_solve(x,Mq_hat,Tq,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, err,Kp,Kd,alpha)     #try dormand prince. RK4 isn't good enough
 
@@ -797,13 +871,14 @@ for k in range(l):
     # controlHist = controlHist.at[:,[k]].set(controlAction)
     # print('size of p and q', jnp.shape(p),jnp.shape(q))
 
-    kinTemp = 0.5*(jnp.transpose((p))@(p))
+    kinTemp = 0.5*(jnp.transpose((p.at[0].get()))@(p.at[0].get()))
     potTemp = Vq(q,constants)
-    hamTemp = 0.5*(jnp.transpose((p))@(p)) + potTemp
+    hamTemp = kinTemp + potTemp
 
     hamHist = hamHist.at[k].set(hamTemp)
     kinHist = kinHist.at[k].set(kinTemp)
     potHist = potHist.at[k].set(potTemp)
+    # xeHist = xeHist.at[:,k].set(xe)
 
 
 
@@ -817,7 +892,7 @@ print(hamHist)
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 controlConstants = ['Kp',Kp,'Kd',Kd,'alpha',alpha]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_TRAJECTORY/data/circularpath_veltrack_longsims2', 'w', newline='') as f:
+with open('/root/FYP/7LINK_TRAJECTORY/data/circle_rms_test', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
@@ -837,7 +912,10 @@ with open('/root/FYP/7LINK_TRAJECTORY/data/circularpath_veltrack_longsims2', 'w'
         kin = kinHist.at[i].get()
         pot = potHist.at[i].get()
         timestamp = t.at[i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot]
+        endeff1 = xe.at[0,i].get()
+        endeff2 = xe.at[1,i].get()
+        endeff3 = xe.at[2,i].get()
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,endeff1,endeff2,endeff3]
           # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)

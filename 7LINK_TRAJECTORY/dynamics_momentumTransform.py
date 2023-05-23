@@ -16,39 +16,37 @@ import csv
 
 # @partial(jax.jit, static_argnames=['s'])
 # def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,s): #need to put in constants
-@jax.jit
+# @jax.jit
 def dynamics_Transform(x,Tq,dTqinvdq_values,dVdq, gravComp,x_err,Kp,Kd,alpha): #need to put in constants
 
-    q2 = x.at[(0,0)].get()      #make the full q vector
-    q4 = x.at[(1,0)].get()
-    q6 = x.at[(2,0)].get()
-
-    p2 = x.at[(3,0)].get()
-    p4 = x.at[(4,0)].get()
-    p6 = x.at[(5,0)].get()
+    q2 = x.at[0,0].get()      #make the full q vector
+    q4 = x.at[1,0].get()
+    q6 = x.at[2,0].get()
+    p2 = x.at[3,0].get()
+    p4 = x.at[4,0].get()
+    p6 = x.at[5,0].get()
 
     
     q0 = jnp.array([     #this is qhat. q0 denotes before momentum transform
-        q2, q4, q6
+        [q2], [q4], [q6]
         ])
     p = jnp.array([     #this function already inputs transformed p
         [p2],[p4],[p6]
         ])
 
-    q0 = jnp.transpose(q0)
+    # q0 = jnp.transpose(q0)
 
-    
+    # print('dynamics q0',q0)
     # Gravitation torque
     # g0 = jnp.array([[0],[0],[-s.g]])
 
-    dVdq1 = dVdq.at[0].get()
-    dVdq2 = dVdq.at[1].get()
-    dVdq3 = dVdq.at[2].get()
+    dVdq1 = dVdq.at[0,0].get()
+    dVdq2 = dVdq.at[1,0].get()
+    dVdq3 = dVdq.at[2,0].get()
+    print(dVdq1)
 
     # gq = gravTorque(s,Jc2,Jc3,Jc4,Jc5,Jc6,Jc7,Jc8)
     gq_hat = jnp.array([[dVdq1],[dVdq2],[dVdq3]])
-
-
 
     # D = 0.5*jnp.eye(3)
     D = jnp.zeros((3,3))
@@ -90,14 +88,10 @@ def dynamics_Transform(x,Tq,dTqinvdq_values,dVdq, gravComp,x_err,Kp,Kd,alpha): #
     #build control law v
     D_hat = jnp.zeros((3,3))
     v = alpha*(Cq - D_hat - Kd)@Kp@(q_tilde + alpha*p_tilde) - Tq@Kp@(q_tilde + alpha*p_tilde) - Kd@p_tilde
-    # print(v)
-
-    # gq_hat = jnp.array([gq.at[1].get(), #might need to check this
-    #                     gq.at[3].get(),
-    #                     gq.at[5].get(),])
+    print(v)
 
     u = gravComp*gq_hat    #multiply by the boolean to change
-
+    print('u',u)
     # print(gq_hat - jnp.array([[dVdq1],[dVdq2],[dVdq3]]))                #how could i forget this is ZERO.
     
      #torque input will be given by gravcomp torque plus control function.
@@ -110,7 +104,6 @@ def dynamics_Transform(x,Tq,dTqinvdq_values,dVdq, gravComp,x_err,Kp,Kd,alpha): #
     # u_hat = Ginv@(Tq@jnp.array([[dVdq1],[dVdq2],[dVdq3]]))# + v)
     # print(u_hat)
 
-
     tau = jnp.block([[jnp.zeros((3,1))],[u_hat]])
 
 
@@ -120,6 +113,37 @@ def dynamics_Transform(x,Tq,dTqinvdq_values,dVdq, gravComp,x_err,Kp,Kd,alpha): #
     ])@jnp.block([[dV],[p]])  + tau 
 
     return xdot_transform     #i might not have realised this actually returns pdot. fix main loop to adjust
+
+
+def observer(q,p,phat,phi,k_obv,Cq,Dq,Tq,xp, dVq, Gq, u,dTqinvdq_values):
+
+    #observer needs to be constructed in main. efforts will go there
+
+    #C(q) is found as part of the dynamic model, same as Tq. However, now need in terms of phat, not p. 
+    dTqinvdq1 = dTqinvdq_values.at[0].get()
+    dTqinvdq2 = dTqinvdq_values.at[1].get()
+    dTqinvdq3 = dTqinvdq_values.at[2].get()
+
+    dTqinv_phatdq1 = dTqinvdq1@phat
+    dTqinv_phatdq2 = dTqinvdq2@phat
+    dTqinv_phatdq3 = dTqinvdq3@phat
+
+    temphat = jnp.block([dTqinv_phatdq1, dTqinv_phatdq2, dTqinv_phatdq3])
+    temphatT = jnp.transpose(temphat)
+    # print('temp',temp)
+    tempchat = temphatT - temphat
+    Cq_phat = Tq@tempchat@Tq
+
+    u0 = 0
+    xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u-u0)
+
+    phi = phi + k_obv           #this happens for an 'instantaneos change'
+    xp = xp - k_obv*q
+
+    phat = xp + phi*q       #estimation of momentum states
+
+
+    return  phat,xp_dot
 
 # def gravTorque(s,Jc2,Jc3,Jc4,Jc5,Jc6,Jc7,Jc8):
 
