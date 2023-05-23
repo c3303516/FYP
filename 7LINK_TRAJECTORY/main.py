@@ -657,11 +657,9 @@ def observer(q,phat,Tq,dTqinvdq_values):
     #C(q) is found as part of the dynamic model, same as Tq. However, now need in terms of phat, not p. 
 
     #compute \barC matrix
-    pbar = jnp.array([[1.],[1.],[1.]])
-
     CbSYM = jacfwd(C_SYS,argnums=0)
 
-    print(CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values))
+    # print(CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values))
 
     # u0 = 0
     # xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u-u0)
@@ -814,6 +812,7 @@ dq_d = create_qdot(q_d,t)
 # q_tilde = q_hat - q_d
 # p_d = jnp.zeros(3)                      #no momentum error
 
+print('SIMULATION LOOP STARTED')
 
 jnp.set_printoptions(precision=15)
 
@@ -828,9 +827,9 @@ for k in range(l):
     # print(q,p)
     
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
-    print('q',q)
+    # print('q',q)
     dMdq = massMatrixJac(q,constants)       #might inject this mq directly into the dynamics later
-    print('shape dMdq', jnp.shape(dMdq))
+    # print('shape dMdq', jnp.shape(dMdq))
     dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
     # print('Tq',Tq)
     # print('Tqinv',Tqinv)
