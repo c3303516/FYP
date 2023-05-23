@@ -17,7 +17,7 @@ import csv
 # @partial(jax.jit, static_argnames=['s'])
 # def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,s): #need to put in constants
 @jax.jit
-def dynamics_Transform(x,Tq,dTqinvdq_values,dVdq, gravComp,x_err,Kp,Kd,alpha): #need to put in constants
+def dynamics_Transform(x,D,Tq,dTqinvdq_values,dVdq,gravComp,x_err,Kp,Kd,alpha): #need to put in constants
 
     q2 = x.at[0,0].get()      #make the full q vector
     q4 = x.at[1,0].get()
@@ -49,7 +49,6 @@ def dynamics_Transform(x,Tq,dTqinvdq_values,dVdq, gravComp,x_err,Kp,Kd,alpha): #
     gq_hat = jnp.array([[dVdq1],[dVdq2],[dVdq3]])
 
     # D = 0.5*jnp.eye(3)
-    D = jnp.zeros((3,3))
 
     #Dynamics after Transform
 

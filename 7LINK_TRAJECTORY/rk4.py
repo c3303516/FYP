@@ -5,18 +5,19 @@ from copy import deepcopy
 from functools import partial
 # from main import dynamics
 
-# @partial(jax.jit, static_argnames=['s'])
-def rk4(xt,func,dt,Mq,Tq,dMdq_values,dTqdq_values,dVdq,gC,x_tilde,Kp,Kd,alpha):
+# # @partial(jax.jit, static_argnames=['s'])
+def rk4(xt,func,dt,*args):
 # def rk4(xt,func,dt,*arguments):
     t = 1
+    # print(args)
     #check what arguments are being sent. Massive purg incoming
-    k1 = func(xt,Tq,dTqdq_values,dVdq,gC,x_tilde,Kp,Kd,alpha)
+    k1 = func(xt,*args)
     # print('A071', s.A07)
-    k2 = func(xt + (k1 * dt) / 2,Tq,dTqdq_values,dVdq,gC,x_tilde,Kp,Kd,alpha)
+    k2 = func(xt + (k1 * dt) / 2,*args)
     # print('A072', s.A07)
-    k3 = func(xt + (k2 * dt) / 2,Tq,dTqdq_values,dVdq,gC,x_tilde,Kp,Kd,alpha)
+    k3 = func(xt + (k2 * dt) / 2,*args)
     # print('A073', s.A07)
-    k4 = func(xt + (k3 * dt),Tq,dTqdq_values,dVdq,gC,x_tilde,Kp,Kd,alpha)
+    k4 = func(xt + (k3 * dt),*args)
     # print(x_tilde)
 
 

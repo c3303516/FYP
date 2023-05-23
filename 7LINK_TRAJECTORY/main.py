@@ -608,16 +608,25 @@ def planar_circle(freq,amp,origin, t):
     return xe,ve
 
 
-def ode_solve(xt,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq, dt, substep_no,gC,x_tilde,Kp,Kd,alpha):
+def ode_solve(dt,substep_no,xt,p_hat,D,Tq_val,dTqinv_block,dVdq,gC,x_tilde,Kp,Kd,alpha):
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
+    p_nextstep = p_hat
     substep = dt/substep_no
+    args = (D,Tq_val,dTqinv_block,dVdq, gC,x_tilde,Kp,Kd,alpha)
+    obs_args = (p_hat,phi,u,D,dVdq,Tq_val,dTqinv_block)
+
     for i in range(substep_no):
-        x_step= rk4(x_nextstep,dynamics_Transform,substep,Mq_val,Tq_val,dMdq_block,dTqinv_block,dVdq,gC,x_tilde,Kp,Kd,alpha)
+        x_step= rk4(x_nextstep,dynamics_Transform,substep,*args)
         x_nextstep = x_step
 
+        p_step, = rk4(p_nextstep,observer_dynamics,substep,*obs_args)
+        p_nextstep = p_step
+
+
     x_finalstep = x_nextstep
-    return x_finalstep
+    p_finalstep = p_nextstep
+    return x_finalstep,p_finalstep
 
 def create_qdot(q_d,t_span):
     #this function approxmates xdot from IKM solution q_d. The final momentum will always be zero, as the approxmition will shorten the array
@@ -650,30 +659,44 @@ def C_SYS(p_sym,p_sym2,Tq,dTqinvdq_val):
 
     return Cq_phat@p_sym2
 
-def observer(q,phat,Tq,dTqinvdq_values):
+def observer_dynamics(phat,phi,u,D,dVq,Tq,dTqinvdq_val):
 
-    #observer needs to be constructed in main. efforts will go there
+    #compute C(q,phat)
+    dTqinvdq1 = dTqinvdq_val.at[0].get()
+    dTqinvdq2 = dTqinvdq_val.at[1].get()
+    dTqinvdq3 = dTqinvdq_val.at[2].get()
+    # print('p',p)
+    dTqinv_phatdq1 = dTqinvdq1@phat
+    dTqinv_phatdq2 = dTqinvdq2@phat
+    dTqinv_phatdq3 = dTqinvdq3@phat
+    # print('dTqinv',dTqinv_phatdq1)
+    temphat = jnp.block([dTqinv_phatdq1, dTqinv_phatdq2, dTqinv_phatdq3])
+    temphatT = jnp.transpose(temphat)
+    # print('temp',temp)
+    Ctemp = temphatT - temphat
+    # print(Ctemp)
+    Cq_phat = Tq@Ctemp@Tq
+    Dq = Tq@D@Tq
 
-    #C(q) is found as part of the dynamic model, same as Tq. However, now need in terms of phat, not p. 
+    # CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values)
+    Gq = Tq #previous result
+    u0 = 0
+    xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u-u0)
 
-    #compute \barC matrix
-    CbSYM = jacfwd(C_SYS,argnums=0)
+    return  xp_dot
 
-    # print(CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values))
+def observer_switch(q,phat,xp,kappa,phi,Tq,dTqinvdq_values):
+    Cbar = CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values)
 
-    # u0 = 0
-    # xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u-u0)
+    linalg.eigvals(phi*Tq - 0.5*(Cbar + jnp.transpose(Cbar)))
+    
+    min = jnp.amin(linalg.eigvals(phi*Tq - 0.5*(Cbar + jnp.transpose(Cbar))))-kappa
 
-    # phi = phi + k_obv           #this happens for an 'instantaneos change'
-    # xp = xp - k_obv*q
+    if min <= 0:
+        phi = phi + kappa
+        xpnew = xp - kappa*q
 
-    # phat = xp + phi*q       #estimation of momentum states
-
-
-    return  
-
-
-
+    return phi,xpnew
 
 
 
@@ -693,9 +716,9 @@ q_hat2 = 0.
 q_hat3 = 0.
 
 q_hat = jnp.array([[q_hat1,q_hat2,q_hat3]])
-p_hat = jnp.array([0.,0.,0.])
+p = jnp.array([0.,0.,0.])
 
-x0 = jnp.block([[q_hat,p_hat]])
+x0 = jnp.block([[q_hat,p]])
 x0 = jnp.transpose(x0)
 print('Initial States', x0)
 # print('shape x0',jnp.shape(x0))
@@ -746,6 +769,14 @@ dMdqhat = massMatrixJac(q_hat,constants)
 dV = jacfwd(Vq,argnums=0)
 
 
+#compute \barC matrix
+CbSYM = jacfwd(C_SYS,argnums=0)
+
+kappa = 1
+phi = kappa #phi(0) = k
+
+D = jnp.zeros((3,3))
+
 ###################################################################################################
 # print('STOP HERE STOP HER ESTOP HERE STHOP HERE')
 # print(fake)
@@ -773,14 +804,19 @@ l = t.size
 
 xHist = jnp.zeros((6,l+1))
 xeHist = jnp.zeros((6,l))
-# print('xHist',xHist)
 hamHist = jnp.zeros(l)
 kinHist = jnp.zeros(l)
 potHist = jnp.zeros(l)
-# print('hamHist',hamHist)
-# print('x0',x0)
+
+
+
+phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
+xp0 = phat0 - phi*q_hat     #inital xp
+xp = xp0
+phatHist = jnp.zeros((3,l+1))
 
 xHist = xHist.at[:,[0]].set(x0)
+phatHist = phatHist.at[:,[0]].set(phat0)
 controlHist = jnp.zeros((3,l))      #controlling 3 states
 
 #Tracking Problem
@@ -825,6 +861,7 @@ for k in range(l):
                    [x.at[4,0].get()],
                    [x.at[5,0].get()]])
     # print(q,p)
+    phat = phatHist.at[:,[k]].get()
     
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
     # print('q',q)
@@ -847,8 +884,7 @@ for k in range(l):
     dVdq = dV(q,constants)
     time = t.at[k].get()
 
-    
-    observer(q,p,Tq,dTqinv_block)
+    phi, xp = observer_switch(q,phat,xp,kappa,phi,Tq,dTqinv_block)
 
     if controlActive == 0:          #reset if control action is down
         err = jnp.zeros((6,1))
@@ -857,7 +893,8 @@ for k in range(l):
         x_d = jnp.block([[q_d.at[:,k].get(), p_d]])
         err = jnp.block([[q], [p]]) - jnp.transpose(x_d)     #define error
     
-    xtemp = ode_solve(x,Mq_hat,Tq,dMdq_block,dTqinv_block,dVdq,dt, substeps,gravComp, err,Kp,Kd,alpha)     #try dormand prince. RK4 isn't good enough
+    xtemp,phattemp = ode_solve(dt,substeps,x,phat,D,Tq,dTqinv_block,dVdq,gravComp,err,Kp,Kd,alpha)     #try dormand prince. RK4 isn't good enough
+    
 
     if jnp.isnan(xtemp.at[0,0].get()):
         print(xtemp.at[0,0].get())
@@ -866,6 +903,9 @@ for k in range(l):
 
 
     xHist = xHist.at[:,[k+1]].set(xtemp)
+    
+    phat = phattemp
+    print(phat)
     # print(xtemp)
     # controlHist = controlHist.at[:,[k]].set(controlAction)
     # print('size of p and q', jnp.shape(p),jnp.shape(q))
