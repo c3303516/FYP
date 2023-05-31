@@ -17,7 +17,7 @@ import csv
 # @partial(jax.jit, static_argnames=['s'])
 # def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,s): #need to put in constants
 @jax.jit
-def dynamics_Transform(x,D,Tq,dTqinvdq_values,dVdq,gravComp,x_err,Kp,Kd,alpha): #need to put in constants
+def dynamics_Transform(x,v,D,Tq,dTqinvdq_values,dVdq): #need to put in constants
 
     q2 = x.at[0,0].get()      #make the full q vector
     q4 = x.at[1,0].get()
@@ -48,7 +48,7 @@ def dynamics_Transform(x,D,Tq,dTqinvdq_values,dVdq,gravComp,x_err,Kp,Kd,alpha): 
     # gq = gravTorque(s,Jc2,Jc3,Jc4,Jc5,Jc6,Jc7,Jc8)
     gq_hat = jnp.array([[dVdq1],[dVdq2],[dVdq3]])
 
-    # D = 0.5*jnp.eye(3)
+
 
     #Dynamics after Transform
 
@@ -80,21 +80,18 @@ def dynamics_Transform(x,D,Tq,dTqinvdq_values,dVdq,gravComp,x_err,Kp,Kd,alpha): 
 
     # print('Cq-Dq', Cq-Dq)
     ##############CONTROLLER#########################
-    q_tilde = x_err.at[0:3].get()
-    p_tilde = x_err.at[3:6].get()
-    # print(q_tilde,p_tilde)
-
-    #build control law v
-    D_hat = jnp.zeros((3,3))
-    v = alpha*(Cq - D_hat - Kd)@Kp@(q_tilde + alpha*p_tilde) - Tq@Kp@(q_tilde + alpha*p_tilde) - Kd@p_tilde
-    # print(v)
-
-    u = gravComp*gq_hat    #multiply by the boolean to change
-    # print('u',u)
-    # print(gq_hat - jnp.array([[dVdq1],[dVdq2],[dVdq3]]))                #how could i forget this is ZERO.
-    
-     #torque input will be given by gravcomp torque plus control function.
-    u_hat = Tq@u  + v      #changes into new momentum coordinates
+    # q_tilde = x_err.at[0:3].get()
+    # p_tilde = x_err.at[3:6].get()
+    # # print(q_tilde,p_tilde)
+    # #build control law v
+    # D_hat = jnp.zeros((3,3))
+    # v = alpha*(Cq - D_hat - Kd)@Kp@(q_tilde + alpha*p_tilde) - Tq@Kp@(q_tilde + alpha*p_tilde) - Kd@p_tilde
+    # # print(v)
+    # u = gravComp*gq_hat    #multiply by the boolean to change
+    # # print('u',u)
+    # # print(gq_hat - jnp.array([[dVdq1],[dVdq2],[dVdq3]]))                #how could i forget this is ZERO.
+    #  #torque input will be given by gravcomp torque plus control function.
+    # u_hat = Tq@u  + v      #changes into new momentum coordinates
     #Gq0 is identity(3) for u  torque input.  Gq = Tq*Gq0 = Tq*eye = Tq
 
     ## Stabilisation (equation 21 in paper)
@@ -103,7 +100,7 @@ def dynamics_Transform(x,D,Tq,dTqinvdq_values,dVdq,gravComp,x_err,Kp,Kd,alpha): 
     # u_hat = Ginv@(Tq@jnp.array([[dVdq1],[dVdq2],[dVdq3]]))# + v)
     # print(u_hat)
 
-    tau = jnp.block([[jnp.zeros((3,1))],[u_hat]])
+    tau = jnp.block([[jnp.zeros((3,1))],[v]])       #add  control input
 
 
     xdot_transform = jnp.block([        #transformed dynamic equations
