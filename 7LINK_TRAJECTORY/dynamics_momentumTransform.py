@@ -101,8 +101,7 @@ def dynamics_Transform(x,v,D,Tq,dTqinvdq_values,dVdq): #need to put in constants
     # print(u_hat)
 
     tau = jnp.block([[jnp.zeros((3,1))],[v]])       #add  control input
-
-
+    
     xdot_transform = jnp.block([        #transformed dynamic equations
         [jnp.zeros((3,3)), Tq],
         [-Tq,      Cq-Dq],

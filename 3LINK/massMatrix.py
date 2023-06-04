@@ -1,25 +1,37 @@
 import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
-
+import jax
 from params import *
 from homogeneousTransforms import *
-from jax.config import config
-config.update("jax_enable_x64", True)
+from functools import partial
+from jax.scipy.linalg import sqrtm
 
+@partial(jax.jit, static_argnames=['s'])
 def massMatrix(q, s):
     q1 = q.at[0].get()
     q2 = q.at[1].get()
 
+    A01 = rotx(-pi/2)@trany(-s.l1)@rotz(q1)
+    A12 = trany(-s.l2)@rotz(q2)
+    A23 = trany(-s.l3)@rotx(pi/2)
+    A02 = A01@A12
+    A03 = A02@A23
+
     # Geometric Jacobians
-    R01 = s.A01[0:3,0:3]     #rotation matrices
-    R12 = s.A12[0:3,0:3]
+    R01 = A01[0:3,0:3]     #rotation matrices
+    R12 = A12[0:3,0:3]
+
+    # Geometric Jacobians
+    c1 = s.c1
+    c2 = s.c2
+    c3 = s.c3
 
     A0c1 = rotx(-pi/2)@trany(-c1)@rotz(q1)
-    A0c2 = s.A01@trany(-c2)@rotz(q2)
-    A0c3 = s.A02@trany(-c3)@rotx(pi/2)
+    A0c2 = A01@trany(-c2)@rotz(q2)
+    A0c3 = A02@trany(-c3)@rotx(pi/2)
 
-    r100   = s.A01[0:3,[3]]
-    r200   = s.A02[0:3,[3]]
+    r100   = A01[0:3,[3]]
+    r200   = A02[0:3,[3]]
 
     rc100   = A0c1[0:3,[3]]
     rc200   = A0c2[0:3,[3]]
@@ -44,21 +56,27 @@ def massMatrix(q, s):
     s.Jc2 = Jc2
     s.Jc3 = Jc3
     # Mass Matrix
-    R02 = s.A02[0:3,0:3]
-    R03 = s.A03[0:3,0:3]
+    R02 = A02[0:3,0:3]
+    R03 = A03[0:3,0:3]
+
+    I2 = s.I2
+    I3 = s.I3
 
     M2 = Jc2.T@jnp.block([
-        [jnp.multiply(m2,jnp.eye(3,3)), jnp.zeros((3,3))],
+        [jnp.multiply(s.m2,jnp.eye(3,3)), jnp.zeros((3,3))],
         [jnp.zeros((3,3)),            R02.T@I2@R02 ]
     ])@Jc2
     M3 = Jc3.T@jnp.block([
-        [jnp.multiply(m3,jnp.eye(3,3)), jnp.zeros((3,3))],
+        [jnp.multiply(s.m3,jnp.eye(3,3)), jnp.zeros((3,3))],
         [jnp.zeros((3,3)),            R03.T@I3@R03 ]
     ])@Jc3
 
     Mq = M2 + M3
-    s.Mq = Mq
-    return Mq, s
+
+    Tqinv = jnp.real(sqrtm(Mq))
+    Tq = linalg.solve(Tqinv,jnp.eye(2))
+
+    return Mq, Tq, Tqinv
 
     
 
