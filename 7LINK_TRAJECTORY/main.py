@@ -596,7 +596,7 @@ def create_qdot(q_d,t_span):
 
     ####################### ODE SOLVER #################################
 
-def ode_solve(dt,substep_no,xt,xpt,v,Cqph,D,Tq_val,dTqinv_block,dVdq,phi):
+def ode_solve(dt,substep_no,xt,xpt,v,Cqph,D,Tq_val,dTqinv_block,dVdq,phi):          #LEGACY
     # x_step = jnp.zeros(m,1)
     x_nextstep = xt
     xp_nextstep = xpt
@@ -686,8 +686,9 @@ def Cqp(p,Tq,dTqinvdq_val):
 
     return Cq
 
-# @jax.jit
-def observer_dynamics(phat,phi,u,Cq_phat,D,dVq,Tq):
+@jax.jit
+def observer_dynamics(xp,phat,phi,u,Cq_phat,D,dVq,Tq):
+    #xp isn't used, but exists here so RK4 solver works in general form
     Dq = Tq@D@Tq
     # CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values)
     Gq = Tq #previous result - confirm this
@@ -712,7 +713,8 @@ def switchCond(phat,kappa,phi,Tq,dTqinvdq_values):
     #process Cbar to the correct size, shape and order. Removes the columns, and transpose reorders columns back to how they should be with jac function
     # print(jnp.transpose(Cbar_large.at[:,0,:,0].get()))
     # print('SHape Cbar', jnp.shape(Cbar))
-    Cbar = jnp.transpose(Cbar_large.at[:,0,:,0].get())
+    # Cbar = jnp.transpose(Cbar_large.at[:,0,:,0].get())        #transpose is not needed according to comparison to joels matlab code
+    Cbar = Cbar_large.at[:,0,:,0].get()
     min = jnp.amin(jnp.real(linalg.eigvals(phi*Tq - 0.5*(Cbar + jnp.transpose(Cbar)))))-kappa
     return min
 
@@ -730,12 +732,12 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = 5*pi/6.
+q0_1 = pi/2.
 q0_2 = 0.
 q0_3 = 0.
 
 q_0 = jnp.array([[q0_1,q0_2,q0_3]])
-p0 = jnp.array([0.,0.,0.])
+p0 = jnp.array([1.,0.,0.3])
 
 x0 = jnp.block([[q_0,p0]])
 x0 = jnp.transpose(x0)
@@ -781,10 +783,10 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 
 s.constants = constants         #for holonomic transform
 #Initialise Simulation Parameters
-dt = 0.001
-substeps = 1
+dt = 0.01
+substeps = 10
 dt_sub = dt/substeps
-T = 1.
+T = 5.
 updatetime = 0.
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
@@ -796,7 +798,7 @@ ContRate = 100 #Hz: Controller refresh rate
 
 #Define Friction
 # D = jnp.zeros((3,3))
-D = 0.5*jnp.eye(m)          #check this imple
+D = 0.5*jnp.eye(n)          #check this imple
 
 endT = T - dt       #prevent truncaton
 t = jnp.arange(0,T,dt)
@@ -816,7 +818,7 @@ switchHist = jnp.zeros(l)
 
 
 # OBSERVER PARAMETER
-kappa = 0.1     #low value to test switches
+kappa = 1.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
@@ -965,7 +967,7 @@ for k in range(l):
         print('Time Elapsed', timeelapsed)
         updatetime = time
         print('Observer Updating')
-        obs_args = (phi,v,Cqph,D,dVdq,Tq)
+        obs_args = (phat,phi,v,Cqph,D,dVdq,Tq)
         xp_update = rk4(xp,observer_dynamics,dt_obs,*obs_args)          #call rk4 solver to update ode
         # xp_step = jnp.zeros((3,1))       #just put this here to test controller works
         xp_k  = xp_update
@@ -1003,6 +1005,7 @@ for k in range(l):
     phatHist = phatHist.at[:,[k]].set(phat)
     #Check Observer dynamics
     H0Hist = H0Hist.at[k].set(0.5*(linalg.norm(ptilde.at[:,0].get()))**2)
+    print('H obs', 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get()))
     phiHist = phiHist.at[k].set(phi)
 
     kinTemp = 0.5*(jnp.transpose(p.at[:,0].get())@p.at[:,0].get())
@@ -1026,7 +1029,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 controlConstants = ['Kp',Kp,'Kd',Kd,'alpha',alpha]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_TRAJECTORY/data/observer_test2', 'w', newline='') as f:
+with open('/root/FYP/7LINK_TRAJECTORY/data/freeswing_observer', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
