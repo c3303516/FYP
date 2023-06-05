@@ -4,10 +4,8 @@ config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
-from effectorFKM import FKM, endEffector
 from massMatrix_holonomic import massMatrix_holonomic
 from dynamics_momentumTransform import dynamics_Transform
-# from errorIKM import errorIKM #now in main!
 import trajectories
 from rk4 import rk4
 from params import robotParams
@@ -730,7 +728,7 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = 7*pi/8.
+q0_1 = pi
 q0_2 = 0.
 q0_3 = 0.
 
@@ -790,9 +788,9 @@ updatetime = 0.
 controlActive = 1     #CONTROL
 gravComp = 1       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
-alpha = 0.01
-Kp = 5.*jnp.eye(n)
-Kd = 5.*jnp.eye(n)
+alpha = 0.001
+Kp = 10.*jnp.eye(n)
+Kd = 10.*jnp.eye(n)
 ContRate = 100 #Hz: Controller refresh rate
 
 #Define Friction
@@ -1026,7 +1024,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 controlConstants = ['Kp',Kp,'Kd',Kd,'alpha',alpha]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_TRAJECTORY/data/pointtrack_observer4', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/pointtrack_observer', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
