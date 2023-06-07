@@ -895,18 +895,6 @@ for k in range(l):
     # print(q,p)
 
     xp = xpHist.at[:,[k]].get()
-
-
-    cond = switchCond(phat,kappa,phi,Tq,dTqinv_block)   #check if jump is necessary
-    print(cond)
-    switchHist = switchHist.at[k].set(cond)
-    if cond <= 0:
-        phiplus, xpplus = observerSwitch(q,phi,xp,kappa)     #switch to xp+,phi+ values
-        phi = phiplus
-        xp = xpplus          #update phi and xp with new values
-
-    ptilde = phat - p       #observer error for k timestep
-    print(ptilde)
     
     phat = xp + phi*q           #find phat for this timestep
 
@@ -933,13 +921,23 @@ for k in range(l):
     # print('Cbar', result)
     # print('size Cbar', jnp.shape(result))
 
+    cond = switchCond(phat,kappa,phi,Tq,dTqinv_block)   #check if jump is necessary
+    print(cond)
+    switchHist = switchHist.at[k].set(cond)
+    if cond <= 0:
+        phiplus, xpplus = observerSwitch(q,phi,xp,kappa)     #switch to xp+,phi+ values
+        phi = phiplus
+        xp = xpplus          #update phi and xp with new values
 
+    ptilde = phat - p       #observer error for k timestep
+    print(ptilde)
 
 
     if controlActive == 1:
-        p_d = Tqinv@dq_d.at[:,k].get()                      #as p0 = Mq*qdot, and p = Tq*p0
-        x_d = jnp.block([[q_d.at[:,k].get(), p_d]])
-        err = jnp.block([[q], [p]]) - jnp.transpose(x_d)     #define error
+        p_d = Tqinv@dq_d.at[:,[k]].get()                      #as p0 = Mq*qdot, and p = Tq*p0
+        # p_d = jnp.zeros((1,3))
+        x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
+        err = jnp.block([[q], [p]]) - x_d     #define error
         #Find Control Input for current x, xtilde
         v_control = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)
     else:

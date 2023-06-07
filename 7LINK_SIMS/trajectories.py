@@ -13,16 +13,16 @@ from jax.scipy.linalg import sqrtm
 from jax import lax
 import csv
 
-
+#These trajectories produce XE. Y coordinate is always zero in each function as current system is xz planar.
 
 # class Traj:
 def point(t,xd,freq,amp):
     x0 = xd.at[0].get()
-    y0 = xd.at[1].get()
-    z0 = xd.at[2].get()
+    # y0 = xd.at[1].get()
+    z0 = xd.at[1].get()
     
     x0_vec = x0*jnp.ones(jnp.size(t))
-    y0_vec = y0*jnp.ones(jnp.size(t))
+    y0_vec = jnp.zeros(jnp.size(t))
     z0_vec = z0*jnp.ones(jnp.size(t))
     xe = jnp.array([x0_vec,y0_vec,z0_vec])
     return xe
@@ -36,7 +36,7 @@ def planar_circle(t,origin,freq,amp):
     x0_vec = x0*jnp.ones(jnp.size(t))
     z0_vec = z0*jnp.ones(jnp.size(t))
 
-    x = amp*sin(2*pi*freq*t) + x0       #check this
+    x = amp*sin(2*pi*freq*t) + x0       #check this     #will start at top of circle
     z = amp*cos(2*pi*freq*t) + z0
     # print(x)
 

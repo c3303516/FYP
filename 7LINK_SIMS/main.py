@@ -4,6 +4,7 @@ config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
+from effectorFKM import endEffector
 from massMatrix_holonomic import massMatrix_holonomic
 from dynamics_momentumTransform import dynamics_Transform
 import trajectories
@@ -488,7 +489,7 @@ def holonomicConstraint(q_hat, qconstants):
 ############################# TRACKING PROBLEM ###################################
 
 @partial(jax.jit, static_argnames=['struct'])
-def errorIKM(q, q0, xestar,struct):
+def errorIKM(q, q_last, xestar,struct):
 
     #q0 is start point. q is iteration to solve for xstar
     #xstar is currently just positon, no angles
@@ -497,7 +498,7 @@ def errorIKM(q, q0, xestar,struct):
     q4 = q[1]
     q6 = q[2]
     # print('struct',struct)
-    q = jnp.array([     #this is qhat. q0 denotes before momentum transform
+    q = jnp.array([     #this is qhat
         [q2, q4, q6]
         ])
 
@@ -531,20 +532,18 @@ def errorIKM(q, q0, xestar,struct):
     #end effector pose
     r0E0 = A0E[0:3,[3]]
 
-    pose_weights = jnp.array([1,1])
-    sqK = 10000*jnp.diag(pose_weights)                          #weights on x and z error
+    pose_weights = jnp.array([1.,1.])
+    sqK = 1000*jnp.diag(pose_weights)                            #weights on x and z error
     e_pose = jnp.array([r0E0[0]-xestar[0] ,r0E0[2]-xestar[2]] )  #penalised error from xe to xestar
 
-    e_q = q - q0            #penalises movement from q0
-    q_weights = jnp.array([1,3,5])              #penalises specific joint movement. Currently set to use base joint more
+    e_q = q - q_last            #penalises movement from q0
+    q_weights = jnp.array([1.,1.,1.])              #penalises specific joint movement. Currently set to use base joint more
     sqW = 1*jnp.diag(q_weights)
 
     sqM = jnp.block([
         [sqW,               jnp.zeros((3, 2))],
         [jnp.zeros((2,3)),  sqK              ]
     ])
-    # print(sqM)
-
 #     s = effectorAnalyticalJacobian(q, param, s);      #this is here for future reference if I want to fix angles
 #     JA = s.JA;
 #     J = [sqW;
@@ -728,7 +727,7 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = pi
+q0_1 = pi/4.
 q0_2 = 0.
 q0_3 = 0.
 
@@ -749,6 +748,7 @@ constants = jnp.array([                 #These are the positions the wrists are 
     [0.],
     [0.],
 ])
+s.constants = constants         #for holonomic transform
 
 holonomicTransform = jnp.array([
         [0.,0.,0.],
@@ -759,6 +759,10 @@ holonomicTransform = jnp.array([
         [0.,0.,1.],
         [0.,0.,0.],
     ])
+
+
+xe0 = endEffector(q_0,s)
+print('Initial Position', xe0)  #XYP coords.
 
 massMatrixJac = jacfwd(MqPrime)
 
@@ -777,21 +781,22 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 (n,hold) = q_0.shape
 (m,hold) = x0.shape
 
-s.constants = constants         #for holonomic transform
 #Initialise Simulation Parameters
-dt = 0.01
-substeps = 10
-dt_sub = dt/substeps
-T = 3.
+dt = 0.001
+substeps = 1
+# dt_sub = dt/substeps      #no longer doing substeps
+T = 0.5
 
-updatetime = 0.
 controlActive = 1     #CONTROL
-gravComp = 1       #1 HAS GRAVITY COMP.
+gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
 alpha = 0.001
-Kp = 10.*jnp.eye(n)
-Kd = 10.*jnp.eye(n)
+Kp = 100.*jnp.eye(n)
+Kd = 50.*jnp.eye(n)
 ContRate = 100 #Hz: Controller refresh rate
+timeConUpdate = 0.
+dt_con = 1/ContRate
+print('Controller dt',dt_con)
 
 #Define Friction
 # D = jnp.zeros((3,3))
@@ -814,16 +819,15 @@ phatHist = jnp.zeros((n,l+1))
 switchHist = jnp.zeros(l)
 
 
-# OBSERVER PARAMETER
+# OBSERVER PARAMETERS
 kappa = 1.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
-ObsRate = 100.   #Hz: refresh rate of observer
-obscounter = 0
-
+ObsRate = 200.   #Hz: refresh rate of observer
+timeObsUpdate = 0.           #last time observer updated
 dt_obs = 1/ObsRate
-print('Obs dt',dt_obs)
+print('Observer dt',dt_obs)
 
 Mqh0, Tq0, Tq0inv, Jc_hat0 = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 dMdq0 = massMatrixJac(q_0,constants)
@@ -857,11 +861,13 @@ controlHist = jnp.zeros((3,l))      #controlling 3 states
 
 #TRACKING PROBLEM
 #solve IKM to find q_d.
-origin = jnp.array([[0.5],[0.],[0.5]])            #circle origin, or point track. XYZ coords.
-frequency = 1.
-amplitude = 0.2
+origin = jnp.array([[0.5],[0.7]])            #circle origin, or point track. XZ coords.as system is XZ planar
+frequency = 0.2
+amplitude = 0.1
 
-traj = 'point'      #Name Trajectory Function
+# traj = 'point'      #Name Trajectory Function
+traj = 'planar_circle'      #Name Trajectory Function
+# traj = 'sinusoid_x'      #Name Trajectory Function
 
 traj_func = getattr(trajectories,traj)
 xe = traj_func(t,origin,frequency,amplitude)        #frequency and amplitude aren't used in point tracking , but function asks for these parameters. Probably really messy implementation
@@ -872,6 +878,7 @@ q_init_guess = jnp.zeros(3)         #initialise initial IKM Guess
 #TRAJECTORY TRACK
 q_d = solveIKM(xe,q_init_guess,s)      #solve IKM so trajectory is changed to generalised idsplacement coordinates.
 # print('q_d',q_d)
+print('qd shape', jnp.shape(q_d))
 # print(q_d.at[:,0].get())
 dq_d = create_qdot(q_d,t)
 
@@ -895,17 +902,6 @@ for k in range(l):
     xp = xpHist.at[:,[k]].get()
 
 
-    cond = switchCond(phat,kappa,phi,Tq,dTqinv_block)   #check if jump is necessary
-    print(cond)
-    switchHist = switchHist.at[k].set(cond)
-    if cond <= 0:
-        phiplus, xpplus = observerSwitch(q,phi,xp,kappa)     #switch to xp+,phi+ values
-        phi = phiplus
-        xp = xpplus          #update phi and xp with new values
-
-    ptilde = phat - p       #observer error for k timestep
-    print(ptilde)
-    
     phat = xp + phi*q           #find phat for this timestep
 
     
@@ -930,16 +926,35 @@ for k in range(l):
 
     # print('Cbar', result)
     # print('size Cbar', jnp.shape(result))
+    cond = switchCond(phat,kappa,phi,Tq,dTqinv_block)   #check if jump is necessary
+    # print(cond)
+    switchHist = switchHist.at[k].set(cond)
+    if cond <= 0:
+        phiplus, xpplus = observerSwitch(q,phi,xp,kappa)     #switch to xp+,phi+ values
+        phi = phiplus
+        xp = xpplus          #update phi and xp with new values
 
+
+    # phat_plus = xp + phi*q
+    # print('Phat Switch', phat - phat_plus)        #check that the switch doesn't affect phat - it doesn't
+
+    ptilde = phat - p       #observer error for k timestep
+    print('p~',ptilde)
 
 
 
     if controlActive == 1:
-        p_d = Tqinv@dq_d.at[:,k].get()                      #as p0 = Mq*qdot, and p = Tq*p0
-        x_d = jnp.block([[q_d.at[:,k].get(), p_d]])
-        err = jnp.block([[q], [p]]) - jnp.transpose(x_d)     #define error
-        #Find Control Input for current x, xtilde
-        v_control = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)
+        timeCon = round((time - timeConUpdate),3)
+        if timeCon >= dt_con:    #update controller
+            p_d = Tqinv@dq_d.at[:,[k]].get()                      #as p0 = Mq*qdot, and p = Tq*p0
+            # p_d = jnp.zeros((1,3))
+            x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
+            err = jnp.block([[q], [p]]) - x_d     #define error
+            #Find Control Input for current x, xtilde
+            v_control = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)
+            timeConUpdate = time
+            print('Controller Updating')
+
     else:
         v_control = jnp.zeros((3,1))
 
@@ -949,17 +964,17 @@ for k in range(l):
         tau = jnp.zeros((3,1))
 
     v = tau + v_control
-    print('v',v)  
+    # print('v',v)  
 
     #update ODE for next time step
     # x_k,xp_k = ode_solve(dt,substeps,x,xp,v,Cqph,D,Tq,dTqinv_block,dVdq,phi)        #values for the kth timestep
 
     #OBSERVER ODE SOLVE 
-    timeelapsed = round((time - updatetime),3)      #dealing with this float time issue
-    # print('Time Elapsed', timeelapsed)
-    if timeelapsed >= dt_obs:    #update observer
-        print('Time Elapsed', timeelapsed)
-        updatetime = time
+    timeObs = round((time - timeObsUpdate),3)      #dealing with this float time issue
+    # print('Time Elapsed', timeObs)
+    if timeObs >= dt_obs:    #update observer
+        # print('Time Elapsed', timeObs)
+        timeObsUpdate = time
         print('Observer Updating')
         # obs_args = (phat,phi,v,Cqph,D,dVdq,Tq)      #legacy
         obs_args = (q,phi,v,Cqph,D,dVdq,Tq)
@@ -973,9 +988,9 @@ for k in range(l):
     #SYSTEM ODE SOLVE
     args = (v,D,Tq,dTqinv_block,dVdq)
     x_nextstep = x
-    for i in range(substeps):
-        x_step= rk4(x_nextstep,dynamics_Transform,dt_sub,*args)
-        x_nextstep = x_step
+    # for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
+    x_step= rk4(x_nextstep,dynamics_Transform,dt,*args)
+    x_nextstep = x_step
 
     x_k = x_nextstep           #extract final rk values from ODE solve
 
@@ -999,7 +1014,7 @@ for k in range(l):
     #store current timestep variables
     phatHist = phatHist.at[:,[k]].set(phat)
     #Check Observer dynamics
-    H0Hist = H0Hist.at[k].set(0.5*(linalg.norm(ptilde.at[:,0].get()))**2)
+    H0Hist = H0Hist.at[k].set(0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get()))
     print('H obs', 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get()))
     phiHist = phiHist.at[k].set(phi)
 
@@ -1024,7 +1039,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 controlConstants = ['Kp',Kp,'Kd',Kd,'alpha',alpha]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/pointtrack_observer', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/circle_observer', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
@@ -1044,9 +1059,9 @@ with open('/root/FYP/7LINK_SIMS/data/pointtrack_observer', 'w', newline='') as f
         kin = kinHist.at[i].get()
         pot = potHist.at[i].get()
         timestamp = t.at[i].get()
-        endeff1 = xe.at[0,i].get()
-        endeff2 = xe.at[1,i].get()
-        endeff3 = xe.at[2,i].get()
+        qd1 = q_d.at[0,i].get()          #used to be xe - now qd, as xe can be calculated in matlab
+        qd2 = q_d.at[1,i].get()
+        qd3 = q_d.at[2,i].get()
         phat1 = phatHist.at[0,i].get()
         phat2 = phatHist.at[1,i].get()
         phat3 = phatHist.at[2,i].get()
@@ -1056,7 +1071,7 @@ with open('/root/FYP/7LINK_SIMS/data/pointtrack_observer', 'w', newline='') as f
         xp2 = xpHist.at[1,i].get()
         xp3 = xpHist.at[2,i].get()
         sc = switchHist.at[i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,endeff1,endeff2,endeff3,phat1,phat2,phat3,ph, Hobs,sc,xp1,xp2,xp3]
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,qd1,qd2,qd3,phat1,phat2,phat3,ph, Hobs,sc,xp1,xp2,xp3]
           # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)
