@@ -695,17 +695,20 @@ def observer_dynamics(xp,q,phi,u,Cq_phat,D,dVq,Tq):
     #these dynamics substitue phat = xp + phi*q for better performance with RK4 solve
     # print('ObsdVq',dVq)
     xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + Gq@(u+u0)
-
     return  xp_dot
 
 #This function allows the observer dynamics to be integrated with the RK4 function. Everything as a function of q
 
 #Try and implement this again. Joel has everything as a function of q and ph, which is what is needed.
-def ode_observer_wrapper(xpo,qo,phato,phio,cntrl,dampo,consto):
-
+def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
+    qo = jnp.array([[xo.at[0,0].get()],   #unpack states
+                   [xo.at[1,0].get()],
+                   [xo.at[2,0].get()]])
+    xpo = jnp.array([[xo.at[3,0].get()],
+                    [xo.at[4,0].get()],
+                    [xo.at[5,0].get()]])
     # xp = phat - phi*q  -- extract q from this with a constant phat?
 
-    
     Mqo, Tqo, Tqinvo, Jco = massMatrix_holonomic(qo,s) 
     dMdqo = massMatrixJac(qo,consto)
     dMdq1o, dMdq2o, dMdq3o = unravel(dMdqo, s)
@@ -725,8 +728,10 @@ def ode_observer_wrapper(xpo,qo,phato,phio,cntrl,dampo,consto):
 
     # print('qo',qo)
 
-    xpo_dot = observer_dynamics(xpo,qo,phio,cntrl,Cqo,dampo,dVdqo,Tqo)
-
+    dxp = observer_dynamics(xpo,qo,phio,cntrl,Cqo,dampo,dVdqo,Tqo)
+    # print('dxp',dxp)
+    xpo_dot = jnp.block([[jnp.zeros((3,1))],[dxp]])
+    # print('xpodot', xpo_dot)
     return xpo_dot
 
 
@@ -812,13 +817,13 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 (m,hold) = x0.shape
 
 #Initialise Simulation Parameters
-dt = 0.01
+dt = 0.005
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
-T = 5.
+T = 2.
 
-controlActive = 0     #CONTROL
-gravComp = 0.       #1 HAS GRAVITY COMP.
+controlActive = 0     #CONTROL ACTIONS
+gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
 alpha = 0.001
 Kp = 200.*jnp.eye(n)
@@ -855,7 +860,7 @@ kappa = 2.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
-ObsRate = 100.   #Hz: refresh rate of observer
+ObsRate = 200.   #Hz: refresh rate of observer
 timeObsUpdate = 0.           #last time observer updated
 dt_obs = 1/ObsRate
 print('Observer dt',dt_obs)
@@ -973,8 +978,6 @@ for k in range(l):
     ptilde = phat - p       #observer error for k timestep
     print('p~',ptilde)
 
-
-
     if controlActive == 1:
         timeCon = round((time - timeConUpdate),3)
         if timeCon >= dt_con:    #update controller
@@ -992,11 +995,11 @@ for k in range(l):
         v_control = jnp.zeros((3,1))
 
     if gravComp == 1:
-        tau = Tq@dVdq 
+        tau = dVdq 
     else:
         tau = jnp.zeros((3,1))
 
-    v = tau + v_control
+    v = (tau + v_control)       #multiplication by Gq occures within sys and obs dynamic functions
     # print('v',v)  
 
     #update ODE for next time step
@@ -1005,19 +1008,31 @@ for k in range(l):
     #OBSERVER ODE SOLVE 
     timeObs = round((time - timeObsUpdate),3)      #dealing with this float time issue
     # print('Time Elapsed', timeObs)
+
+    
     if timeObs >= dt_obs:    #update observer
+            
+        x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
+                          [x.at[1,0].get()],
+                          [x.at[2,0].get()],
+                          [xp.at[0,0].get()],
+                          [xp.at[1,0].get()],
+                          [xp.at[2,0].get()]])
+
         Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
         # print('Time Elapsed', timeObs)
         timeObsUpdate = time
         print('Observer Updating')
-        # obs_args = (q,phat,phi,v,D,constants)
-                #ode_observer_wrapper(qo,xpo,phato,phio,cntrl,dampo,consto):
-        # xp_update = rk4(xp,ode_observer_wrapper,dt_obs,*obs_args)          #call rk4 solver to update ode
-        
-        obs_args = (q,phi,v,Cqph,D,dVdq,Tq)
-        xp_update = rk4(xp,observer_dynamics,dt_obs,*obs_args)
+        obs_args = (phat,phi,v,D,constants)
+                # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
+        xp_update = rk4(x_obs,ode_observer_wrapper,dt_obs,*obs_args)          #call rk4 solver to update ode
+        # print('xp_update', xp_update)
+        # obs_args = (phi,v,Cqph,D,dVdq,Tq)     #this acts on th observer dyanmics directly
+        # xp_update = rk4(x_obs,observer_dynamics,dt_obs,*obs_args)
         # xp_step = jnp.zeros((3,1))       #just put this here to test controller works
-        xp_k  = xp_update
+        xp_k  = jnp.array([[xp_update.at[3,0].get()],
+                          [xp_update.at[4,0].get()],
+                          [xp_update.at[5,0].get()]])
 
     else:
         xp_k = xp           #hold xp value from previous iteration
@@ -1078,7 +1093,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
 controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/freeswing_observer', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/gravcomp_observer', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
