@@ -46,7 +46,7 @@ def dynamics_Transform(x,v,D,Tq,dTqinvdq_values,dVdq): #need to put in constants
     # print(dVdq1)
 
     # gq = gravTorque(s,Jc2,Jc3,Jc4,Jc5,Jc6,Jc7,Jc8)
-    gq_hat = jnp.array([[dVdq1],[dVdq2],[dVdq3]])
+    # gq_hat = jnp.array([[dVdq1],[dVdq2],[dVdq3]])
 
 
 

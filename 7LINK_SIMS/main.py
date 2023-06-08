@@ -593,26 +593,30 @@ def create_qdot(q_d,t_span):
 
     ####################### ODE SOLVER #################################
 
-def ode_solve(dt,substep_no,xt,xpt,v,Cqph,D,Tq_val,dTqinv_block,dVdq,phi):          #LEGACY
-    # x_step = jnp.zeros(m,1)
-    x_nextstep = xt
-    xp_nextstep = xpt
-    substep = dt/substep_no
-    args = (v,D,Tq_val,dTqinv_block,dVdq)
-    obs_args = (phi,v,Cqph,D,dVdq,Tq_val)
 
-    for i in range(substep_no):
-        x_step= rk4(x_nextstep,dynamics_Transform,substep,*args)
-        x_nextstep = x_step
+    # args = (v,D,constants)          ,Tq,dTqinv_block,dVdq)
+def ode_dynamics_wrapper(xt,control_input,Damp,const):    
+#This function allows the system dynamics to be integrated with the RK4 function. Everything as a function of q
+    qt = jnp.array([[xt.at[0,0].get()],   #unpack states
+                   [xt.at[1,0].get()],
+                   [xt.at[2,0].get()]])
 
-        xp_step = rk4(xp_nextstep,observer_dynamics,substep,*obs_args)
-        # xp_step = jnp.zeros((3,1))       #just put this here to test controller works
-        xp_nextstep = xp_step
+    Mqt, Tqt, Tqinvt, Jct = massMatrix_holonomic(qt,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+    dMdqt = massMatrixJac(qt,const)
+    dMdq1t, dMdq2t, dMdq3t = unravel(dMdqt, s)
 
+    dTqidq1t = solve_continuous_lyapunov(Tqinvt,dMdq1t)
+    dTqidq2t = solve_continuous_lyapunov(Tqinvt,dMdq2t)
+    dTqidq3t = solve_continuous_lyapunov(Tqinvt,dMdq3t)
 
-    x_finalstep = x_nextstep
-    xp_finalstep = xp_nextstep
-    return x_finalstep,xp_finalstep
+    dTqinvt = jnp.array([dTqidq1t,dTqidq2t,dTqidq3t])
+    # dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
+    dVdqt = dV_func(qt,const)
+    args = (control_input,Damp,Tqt,dTqinvt,dVdqt)
+
+    xt_dot = dynamics_Transform(xt,*args)        #return xdot from dynamics function
+
+    return xt_dot
 
 
 
@@ -683,21 +687,47 @@ def Cqp(p,Tq,dTqinvdq_val):
 
 @jax.jit
 def observer_dynamics(xp,q,phi,u,Cq_phat,D,dVq,Tq):
-    #xp isn't used, but exists here so RK4 solver works in general form
     Dq = Tq@D@Tq
     # CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values)
     Gq = Tq #previous result - confirm this
     u0 = jnp.zeros((3,1))
     # xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u+u0)
-
     #these dynamics substitue phat = xp + phi*q for better performance with RK4 solve
-
+    # print('ObsdVq',dVq)
     xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + Gq@(u+u0)
 
-
-    # print('xpdot',xp_dot)
-
     return  xp_dot
+
+#This function allows the observer dynamics to be integrated with the RK4 function. Everything as a function of q
+
+#Try and implement this again. Joel has everything as a function of q and ph, which is what is needed.
+def ode_observer_wrapper(xpo,qo,phato,phio,cntrl,dampo,consto):
+
+    # xp = phat - phi*q  -- extract q from this with a constant phat?
+
+    
+    Mqo, Tqo, Tqinvo, Jco = massMatrix_holonomic(qo,s) 
+    dMdqo = massMatrixJac(qo,consto)
+    dMdq1o, dMdq2o, dMdq3o = unravel(dMdqo, s)
+
+    dTqidq1o = solve_continuous_lyapunov(Tqinvo,dMdq1o)
+    dTqidq2o = solve_continuous_lyapunov(Tqinvo,dMdq2o)
+    dTqidq3o = solve_continuous_lyapunov(Tqinvo,dMdq3o)
+
+    dTqinvo = jnp.array([dTqidq1o,dTqidq2o,dTqidq3o])
+    # dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
+    dVdqo = dV_func(qo,consto)
+
+    # print('dVdqo',dVdqo)
+    phato_dynamic = xpo+phi*qo
+    Cqo = Cqp(phato_dynamic,Tqo,dTqinvo)
+    # print('v', cntrl)
+
+    # print('qo',qo)
+
+    xpo_dot = observer_dynamics(xpo,qo,phio,cntrl,Cqo,dampo,dVdqo,Tqo)
+
+    return xpo_dot
 
 
 #rewrite to bring switch out of switch condtition
@@ -782,25 +812,26 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 (m,hold) = x0.shape
 
 #Initialise Simulation Parameters
-dt = 0.001
+dt = 0.01
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
-T = 0.5
+T = 5.
 
-controlActive = 1     #CONTROL
-gravComp = 1.       #1 HAS GRAVITY COMP.
+controlActive = 0     #CONTROL
+gravComp = 0.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
 alpha = 0.001
-Kp = 100.*jnp.eye(n)
+Kp = 200.*jnp.eye(n)
 Kd = 50.*jnp.eye(n)
 ContRate = 100 #Hz: Controller refresh rate
-timeConUpdate = 0.
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
+timeConUpdate = 0.     #this forces an initial update at t = 0s
+v_control = jnp.zeros((3,1))
 
 #Define Friction
 # D = jnp.zeros((3,3))
-D = 0.5*jnp.eye(n)          #check this imple
+D = 1.*jnp.eye(n)          #check this imple
 
 endT = T - dt       #prevent truncaton
 t = jnp.arange(0,T,dt)
@@ -820,14 +851,15 @@ switchHist = jnp.zeros(l)
 
 
 # OBSERVER PARAMETERS
-kappa = 1.     #low value to test switches
+kappa = 2.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
-ObsRate = 200.   #Hz: refresh rate of observer
+ObsRate = 100.   #Hz: refresh rate of observer
 timeObsUpdate = 0.           #last time observer updated
 dt_obs = 1/ObsRate
 print('Observer dt',dt_obs)
+Hobs = 0.
 
 Mqh0, Tq0, Tq0inv, Jc_hat0 = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 dMdq0 = massMatrixJac(q_0,constants)
@@ -865,8 +897,8 @@ origin = jnp.array([[0.5],[0.7]])            #circle origin, or point track. XZ 
 frequency = 0.2
 amplitude = 0.1
 
-# traj = 'point'      #Name Trajectory Function
-traj = 'planar_circle'      #Name Trajectory Function
+traj = 'point'      #Name Trajectory Function
+# traj = 'planar_circle'      #Name Trajectory Function
 # traj = 'sinusoid_x'      #Name Trajectory Function
 
 traj_func = getattr(trajectories,traj)
@@ -904,7 +936,6 @@ for k in range(l):
 
     phat = xp + phi*q           #find phat for this timestep
 
-    
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 
     dMdq = massMatrixJac(q,constants)
@@ -915,12 +946,13 @@ for k in range(l):
     dTqinvdq3 = solve_continuous_lyapunov(Tqinv,dMdq3)
 
     dTqinv_block = jnp.array([dTqinvdq1,dTqinvdq2,dTqinvdq3])
-    dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
+    # dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
     dVdq = dV_func(q,constants)
 
     # print(dVdq)
 
     Cqph = Cqp(phat,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
+    Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
 
     # result = CbSYM(jnp.zeros((3,1)),phat,Tq,dTqinv_block)
 
@@ -946,14 +978,15 @@ for k in range(l):
     if controlActive == 1:
         timeCon = round((time - timeConUpdate),3)
         if timeCon >= dt_con:    #update controller
+            print('Controller Updating')
             p_d = Tqinv@dq_d.at[:,[k]].get()                      #as p0 = Mq*qdot, and p = Tq*p0
             # p_d = jnp.zeros((1,3))
             x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
             err = jnp.block([[q], [p]]) - x_d     #define error
             #Find Control Input for current x, xtilde
-            v_control = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)
+            # v_control = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
+            v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
             timeConUpdate = time
-            print('Controller Updating')
 
     else:
         v_control = jnp.zeros((3,1))
@@ -973,26 +1006,32 @@ for k in range(l):
     timeObs = round((time - timeObsUpdate),3)      #dealing with this float time issue
     # print('Time Elapsed', timeObs)
     if timeObs >= dt_obs:    #update observer
+        Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
         # print('Time Elapsed', timeObs)
         timeObsUpdate = time
         print('Observer Updating')
-        # obs_args = (phat,phi,v,Cqph,D,dVdq,Tq)      #legacy
+        # obs_args = (q,phat,phi,v,D,constants)
+                #ode_observer_wrapper(qo,xpo,phato,phio,cntrl,dampo,consto):
+        # xp_update = rk4(xp,ode_observer_wrapper,dt_obs,*obs_args)          #call rk4 solver to update ode
+        
         obs_args = (q,phi,v,Cqph,D,dVdq,Tq)
-        xp_update = rk4(xp,observer_dynamics,dt_obs,*obs_args)          #call rk4 solver to update ode
+        xp_update = rk4(xp,observer_dynamics,dt_obs,*obs_args)
         # xp_step = jnp.zeros((3,1))       #just put this here to test controller works
         xp_k  = xp_update
+
     else:
         xp_k = xp           #hold xp value from previous iteration
 
 
     #SYSTEM ODE SOLVE
-    args = (v,D,Tq,dTqinv_block,dVdq)
+    args = (v,D,constants)
     x_nextstep = x
     # for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
-    x_step= rk4(x_nextstep,dynamics_Transform,dt,*args)
+    x_step= rk4(x,ode_dynamics_wrapper,dt,*args)
     x_nextstep = x_step
 
-    x_k = x_nextstep           #extract final rk values from ODE solve
+
+    x_k = x_nextstep           #extract final values from ODE solve
 
     if jnp.isnan(x_k.any()):          #check if simiulation messes up
         print(x_k)
@@ -1014,8 +1053,8 @@ for k in range(l):
     #store current timestep variables
     phatHist = phatHist.at[:,[k]].set(phat)
     #Check Observer dynamics
-    H0Hist = H0Hist.at[k].set(0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get()))
-    print('H obs', 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get()))
+    H0Hist = H0Hist.at[k].set(Hobs)
+    print('H obs', Hobs)
     phiHist = phiHist.at[k].set(phi)
 
     kinTemp = 0.5*(jnp.transpose(p.at[:,0].get())@p.at[:,0].get())
@@ -1036,10 +1075,10 @@ for k in range(l):
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
-details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
-controlConstants = ['Kp',Kp,'Kd',Kd,'alpha',alpha]
+details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
+controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/circle_observer', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/freeswing_observer', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
