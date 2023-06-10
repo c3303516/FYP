@@ -361,7 +361,33 @@ def MqPrime(q_hat,constants):
         
     return Mprime
 
-def unravel(dMdq_temp, s):
+def TqiPrime(q_hat,constants):           #used in creating a Tqinv stack for dTinvdq calcs
+    Mq = massMatrix_continuous(q_hat,constants)
+    A = jnp.array([
+        [0.,0.,0.],
+        [1.,0.,0.],
+        [0.,0.,0.],
+        [0.,1.,0.],
+        [0.,0.,0.],
+        [0.,0.,1.],
+        [0.,0.,0.],
+    ])
+    
+    Mq_hat = jnp.transpose(A)@Mq@A
+    Tqi = jnp.real(sqrtm(Mq_hat))
+
+    Tiprime = jnp.zeros(Tqi.size)
+    # print('sizeMq', jnp.shape(Mq_hat))
+    # print('sizeMprime',jnp.shape(Mprime))
+    m,n = jnp.shape(Tqi)
+    for i in range(m):
+        # print('i', i)
+        Tiprime = Tiprime.at[n*i:n*(i+1)].set(Tqi.at[0:m,i].get())
+        
+    return Tiprime
+
+@jax.jit
+def unravel(dMdq_temp):         #This rearranges the square matrix that gets input after jacobian calculation
     # could probably generalise this for any array
     (m,n,l) = jnp.shape(dMdq_temp)
     dMdq1 = jnp.zeros((n,n))
@@ -370,15 +396,20 @@ def unravel(dMdq_temp, s):
     # print('dmdqshpae',jnp.shape(dMdq1))
 
     for i in range(n):
-        # print('i',i)        #i goes from 0-6
-        # print('n*i',n*i)
         dMdq1 = dMdq1.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),0,0].get())
         dMdq2 = dMdq2.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),1,0].get())
         dMdq3 = dMdq3.at[0:n,i].set(dMdq_temp.at[n*i:n*(i+1),2,0].get())
 
-
     return dMdq1, dMdq2, dMdq3 
 
+# @partial(jax.jit, static_argnames=['Ti'])
+@jax.jit
+def dTi(Ti,dM):
+    dTi = solve_continuous_lyapunov(Ti,dM)
+    return dTi
+
+
+@jax.jit
 def Vq(q_hat, qconstants):
     #Function has to do FKM again to enable autograd to work
     dFcdq = jnp.array([
@@ -603,7 +634,7 @@ def ode_dynamics_wrapper(xt,control_input,Damp,const):
 
     Mqt, Tqt, Tqinvt, Jct = massMatrix_holonomic(qt,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
     dMdqt = massMatrixJac(qt,const)
-    dMdq1t, dMdq2t, dMdq3t = unravel(dMdqt, s)
+    dMdq1t, dMdq2t, dMdq3t = unravel(dMdqt)
 
     dTqidq1t = solve_continuous_lyapunov(Tqinvt,dMdq1t)
     dTqidq2t = solve_continuous_lyapunov(Tqinvt,dMdq2t)
@@ -705,7 +736,7 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
 
     Mqo, Tqo, Tqinvo, Jco = massMatrix_holonomic(qo,s) 
     dMdqo = massMatrixJac(qo,consto)
-    dMdq1o, dMdq2o, dMdq3o = unravel(dMdqo, s)
+    dMdq1o, dMdq2o, dMdq3o = unravel(dMdqo)
 
     dTqidq1o = solve_continuous_lyapunov(Tqinvo,dMdq1o)
     dTqidq2o = solve_continuous_lyapunov(Tqinvo,dMdq2o)
@@ -761,7 +792,7 @@ q0_2 = 0.
 q0_3 = 0.
 
 q_0 = jnp.array([[q0_1,q0_2,q0_3]])
-p0 = jnp.array([0.,0.,0.])
+p0 = jnp.array([1.,0.,0.])
 
 x0 = jnp.block([[q_0,p0]])
 x0 = jnp.transpose(x0)
@@ -795,6 +826,8 @@ print('Initial Position', xe0)  #XYP coords.
 
 massMatrixJac = jacfwd(MqPrime)
 
+TqiJac = jacfwd(TqiPrime)
+
 # V = Vq(q_hat,constants)
 # print('V', V)
 dV_func = jacfwd(Vq,argnums=0)
@@ -822,7 +855,7 @@ gravComp = 1.       #1 HAS GRAVITY COMP.
 alpha = 0.
 Kp = 20.*jnp.eye(n)
 Kd = 5.*jnp.eye(n)
-ContRate = 200 #Hz: Controller refresh rate
+ContRate = 200. #Hz: Controller refresh rate
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
 timeConUpdate = 0.     #this forces an initial update at t = 0s
@@ -862,11 +895,20 @@ Hobs = 0.
 
 Mqh0, Tq0, Tq0inv, Jc_hat0 = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 dMdq0 = massMatrixJac(q_0,constants)
-dMdq10, dMdq20, dMdq30 = unravel(dMdq0, s)
+dMdq10, dMdq20, dMdq30 = unravel(dMdq0)
 dTq0invdq1 = solve_continuous_lyapunov(Tq0inv,dMdq10)
 dTq0invdq2 = solve_continuous_lyapunov(Tq0inv,dMdq20)
 dTq0invdq3 = solve_continuous_lyapunov(Tq0inv,dMdq30)
 dTqinv0 = jnp.array([dTq0invdq1,dTq0invdq2,dTq0invdq3])
+
+# dTqinv_test = dTi(Tq0inv,dMdq10)
+
+#Testing
+# dTidq_test = TqiJac(q_0,constants)        #this doesn't apprea to work as sqrtm mght not have a jax tracer
+# dTidq1,dTidq2,dTidq3 = unravel(dTidq_test)
+# dTqinv_test = jnp.array([dTidq1,dTidq2,dTidq3])
+
+# print('dTqi diff', dTq0invdq1 - dTqinv_test)
 
 while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
     phitemp, xptmp = observerSwitch(q_0,phi,xp0,kappa)
@@ -893,7 +935,7 @@ controlHist = jnp.zeros((3,l))      #controlling 3 states
 ##################### TRACKING PROBLEM PARAMETERS
 #solve IKM to find q_d.
 origin = jnp.array([[0.6],[0.6]])            #circle origin, or point track. XZ coords.as system is XZ planar
-frequency = 0.2
+frequency = 0.5
 amplitude = 0.1
 
 traj = 'point'      #Name Trajectory Function
@@ -902,9 +944,8 @@ traj = 'point'      #Name Trajectory Function
 
 traj_func = getattr(trajectories,traj)
 xe = traj_func(t,origin,frequency,amplitude)        #frequency and amplitude aren't used in point tracking , but function asks for these parameters. Probably really messy implementation
-# print(xe)
+
 q_init_guess = jnp.zeros(3)         #initialise initial IKM Guess
-# print('q_guss',q_init_guess)
 
 #TRAJECTORY TRACK
 q_d = solveIKM(xe,q_init_guess,s)      #solve IKM so trajectory is changed to generalised idsplacement coordinates.
@@ -938,7 +979,7 @@ for k in range(l):
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 
     dMdq = massMatrixJac(q,constants)
-    dMdq1, dMdq2, dMdq3 = unravel(dMdq, s)
+    dMdq1, dMdq2, dMdq3 = unravel(dMdq)
 
     dTqinvdq1 = solve_continuous_lyapunov(Tqinv,dMdq1)
     dTqinvdq2 = solve_continuous_lyapunov(Tqinv,dMdq2)
@@ -977,12 +1018,12 @@ for k in range(l):
         if timeCon >= dt_con:    #update controller
             print('Controller Updating')
             # p_d = Tqinv@dq_d.at[:,[k]].get()                      #as p0 = Mq*qdot, and p = Tq*p0
-            p_d = jnp.zeros((3,1))
+            p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
             x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
             err = jnp.block([[q], [p]]) - x_d     #define error
             #Find Control Input for current x, xtilde
-            # v_control = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
-            v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
+            v_control = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
+            # v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
             timeConUpdate = time
 
     else:
@@ -998,9 +1039,10 @@ for k in range(l):
 
     #OBSERVER ODE SOLVE 
     timeObs = round((time - timeObsUpdate),3)      #dealing with this float time issue
-    print('Time Elapsed', timeObs)
+
     if timeObs >= dt_obs:    #update observer
-        timeObsUpdate = time   
+        timeObsUpdate = time
+        print('Time Elapsed', timeObs)
         x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
                           [x.at[1,0].get()],
                           [x.at[2,0].get()],
@@ -1052,8 +1094,6 @@ for k in range(l):
     xHist = xHist.at[:,[k+1]].set(x_k)            #x for next timestep       
     xpHist = xpHist.at[:,[k+1]].set(xp_k)
 
-
-
     #store current timestep variables
     phatHist = phatHist.at[:,[k]].set(phat)
     #Check Observer dynamics
@@ -1082,7 +1122,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
 controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/pointtrack_observer', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/point_observer_initialerror', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
@@ -1118,17 +1158,5 @@ with open('/root/FYP/7LINK_SIMS/data/pointtrack_observer', 'w', newline='') as f
           # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)
-    # header = ['Time', 'Control History']
-    # writer.writerow(details)
-    # for i in range(l):
-    #     c1 = controlHist.at[0,i].get()
-    #     c2 = controlHist.at[1,i].get()
-    #     c3 = controlHist.at[2,i].get()
 
-    #     timestamp = t.at[i].get()
-    #     data = ['Time:', timestamp, 'Control Action:    ', c1,c2,c3]
-
-    #     writer.writerow(data)
-# print('xHist',xHist)    
-# print('xeHist',xeHist)
 

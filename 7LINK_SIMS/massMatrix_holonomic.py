@@ -8,14 +8,9 @@ from jax.scipy.linalg import sqrtm
 
 @partial(jax.jit, static_argnames=['s'])
 def massMatrix_holonomic(q0, s):
-    q2 = q0.at[0].get()      #make the full q vector
+    q2 = q0.at[0].get()      #pass the joint variable to the specific joints 
     q4 = q0.at[1].get()
     q6 = q0.at[2].get()
-
-    
-    # q0 = jnp.array([     #this is qhat. q0 denotes before momentum transform
-    #     q2, q4, q6
-    #     ])
 
     dFcdq = jnp.array([
         [0.,0.,0.],
@@ -24,17 +19,10 @@ def massMatrix_holonomic(q0, s):
         [0.,0.,0.],
     ])
 
-    # print('q1',q1)
-    # print('q2',q2)
-
-    # print('q',q)
-
-    # q0 = jnp.transpose(q0)
-    # print(q0)
     qconstants = s.constants
-    q0_bold = qconstants.at[0].get()     #constrained variabless
+    q0_bold = qconstants.at[0].get()     #Create the q's defined by holonomic constraint
     
-    q1 = q0_bold.at[0].get()
+    q1 = q0_bold.at[0].get()                #pass out to joints
     q3 = q0_bold.at[1].get()
     q5 = q0_bold.at[2].get()
     q7 = q0_bold.at[3].get()
