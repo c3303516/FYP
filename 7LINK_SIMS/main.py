@@ -624,15 +624,9 @@ def ode_dynamics_wrapper(xt,control_input,Damp,const):
 
 @jax.jit
 def control(x_err,Tq,Cq,Kp,Kd,alpha,gravComp):
+    #This control function provides the 'v' input detailed in the paper. This v is added to gravity compensation.
     q_tilde = x_err.at[0:3].get()
     p_tilde = x_err.at[3:6].get()
-    # print('dV',dVdq)
-    # dVdq1 = dVdq.at[0,0].get()
-    # dVdq2 = dVdq.at[1,0].get()
-    # dVdq3 = dVdq.at[2,0].get()
-    # gq_hat = jnp.array([[dVdq1],[dVdq2],[dVdq3]])
-
-    # print(gq_hat-dVdq)
 
     D_hat = jnp.zeros((3,3))
     v = alpha*(Cq - D_hat - Kd)@Kp@(q_tilde + alpha*p_tilde) - Tq@Kp@(q_tilde + alpha*p_tilde) - Kd@p_tilde
@@ -694,7 +688,7 @@ def observer_dynamics(xp,q,phi,u,Cq_phat,D,dVq,Tq):
     # xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u+u0)
     #these dynamics substitue phat = xp + phi*q for better performance with RK4 solve
     # print('ObsdVq',dVq)
-    xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + Gq@(u+u0)
+    xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + u      #Gq@(u+u0) = u as control law isn't multiplied by Gq^-1
     return  xp_dot
 
 #This function allows the observer dynamics to be integrated with the RK4 function. Everything as a function of q
@@ -722,7 +716,7 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
     dVdqo = dV_func(qo,consto)
 
     # print('dVdqo',dVdqo)
-    phato_dynamic = xpo+phi*qo
+    phato_dynamic = xpo+phio*qo
     Cqo = Cqp(phato_dynamic,Tqo,dTqinvo)
     # print('v', cntrl)
 
@@ -737,7 +731,7 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
 
 #rewrite to bring switch out of switch condtition
 def switchCond(phat,kappa,phi,Tq,dTqinvdq_values):
-    m,n = jnp.shape(Tq)
+    # m,n = jnp.shape(Tq)
     # print('phat',phat)
     Cbar_large = CbSYM(jnp.zeros((3,1)),phat,Tq,dTqinvdq_values)  
     #process Cbar to the correct size, shape and order. Removes the columns, and transpose reorders columns back to how they should be with jac function
@@ -762,7 +756,7 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = pi/4.
+q0_1 = pi/2.
 q0_2 = 0.
 q0_3 = 0.
 
@@ -822,13 +816,13 @@ substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
 T = 2.
 
-controlActive = 0     #CONTROL ACTIONS
+controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
-alpha = 0.001
-Kp = 200.*jnp.eye(n)
-Kd = 50.*jnp.eye(n)
-ContRate = 100 #Hz: Controller refresh rate
+alpha = 0.
+Kp = 20.*jnp.eye(n)
+Kd = 5.*jnp.eye(n)
+ContRate = 200 #Hz: Controller refresh rate
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
 timeConUpdate = 0.     #this forces an initial update at t = 0s
@@ -856,7 +850,7 @@ switchHist = jnp.zeros(l)
 
 
 # OBSERVER PARAMETERS
-kappa = 2.     #low value to test switches
+kappa = 4.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
@@ -896,9 +890,9 @@ phatHist = phatHist.at[:,[0]].set(phat0)
 xpHist = xpHist.at[:,[0]].set(xp0)
 controlHist = jnp.zeros((3,l))      #controlling 3 states
 
-#TRACKING PROBLEM
+##################### TRACKING PROBLEM PARAMETERS
 #solve IKM to find q_d.
-origin = jnp.array([[0.5],[0.7]])            #circle origin, or point track. XZ coords.as system is XZ planar
+origin = jnp.array([[0.6],[0.6]])            #circle origin, or point track. XZ coords.as system is XZ planar
 frequency = 0.2
 amplitude = 0.1
 
@@ -982,8 +976,8 @@ for k in range(l):
         timeCon = round((time - timeConUpdate),3)
         if timeCon >= dt_con:    #update controller
             print('Controller Updating')
-            p_d = Tqinv@dq_d.at[:,[k]].get()                      #as p0 = Mq*qdot, and p = Tq*p0
-            # p_d = jnp.zeros((1,3))
+            # p_d = Tqinv@dq_d.at[:,[k]].get()                      #as p0 = Mq*qdot, and p = Tq*p0
+            p_d = jnp.zeros((3,1))
             x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
             err = jnp.block([[q], [p]]) - x_d     #define error
             #Find Control Input for current x, xtilde
@@ -995,23 +989,18 @@ for k in range(l):
         v_control = jnp.zeros((3,1))
 
     if gravComp == 1:
-        tau = dVdq 
+        tau = Tq@dVdq           #tranform into momentum trnasform dynamics
     else:
         tau = jnp.zeros((3,1))
 
-    v = (tau + v_control)       #multiplication by Gq occures within sys and obs dynamic functions
-    # print('v',v)  
-
-    #update ODE for next time step
-    # x_k,xp_k = ode_solve(dt,substeps,x,xp,v,Cqph,D,Tq,dTqinv_block,dVdq,phi)        #values for the kth timestep
+    v = (tau + v_control)      #Equation 21 in the paper. Not multiplied by G^-1 as that gets cancelled with Tq multiplication in dynamics
+      # print('v',v)  
 
     #OBSERVER ODE SOLVE 
     timeObs = round((time - timeObsUpdate),3)      #dealing with this float time issue
-    # print('Time Elapsed', timeObs)
-
-    
+    print('Time Elapsed', timeObs)
     if timeObs >= dt_obs:    #update observer
-            
+        timeObsUpdate = time   
         x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
                           [x.at[1,0].get()],
                           [x.at[2,0].get()],
@@ -1021,7 +1010,6 @@ for k in range(l):
 
         Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
         # print('Time Elapsed', timeObs)
-        timeObsUpdate = time
         print('Observer Updating')
         obs_args = (phat,phi,v,D,constants)
                 # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
@@ -1037,6 +1025,7 @@ for k in range(l):
     else:
         xp_k = xp           #hold xp value from previous iteration
 
+    # xp_k = xp           #while observer isn't working
 
     #SYSTEM ODE SOLVE
     args = (v,D,constants)
@@ -1093,7 +1082,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
 controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/gravcomp_observer', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/pointtrack_observer', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

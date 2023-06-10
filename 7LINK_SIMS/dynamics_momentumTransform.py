@@ -100,7 +100,9 @@ def dynamics_Transform(x,v,D,Tq,dTqinvdq_values,dVdq): #need to put in constants
     # u_hat = Ginv@(Tq@jnp.array([[dVdq1],[dVdq2],[dVdq3]]))# + v)
     # print(u_hat)
 
-    tau = jnp.block([[jnp.zeros((3,1))],[Tq@v]])       #add  control input
+    #v is not multiplied by Tq anymore - check this in control paper. This might ahve been the mistake
+
+    tau = jnp.block([[jnp.zeros((3,1))],[v]])       #add  control input
     
     xdot_transform = jnp.block([        #transformed dynamic equations
         [jnp.zeros((3,3)), Tq],
