@@ -611,10 +611,10 @@ def solveIKM(traj,init_guess,params):
     return q_d
 
 
-def create_qdot(q_d,t_span):
+def diff_finite(q_d,t_span):
     #this function approxmates xdot from IKM solution q_d. The final momentum will always be zero, as the approxmition will shorten the array
     l = jnp.size(t_span)
-    qdot = jnp.zeros(jnp.shape(q_d))
+    qdot = jnp.zeros(jnp.shape(q_d))        #end will be zero
     # print('qdotsize',jnp.shape(qdot))
 
     for i in range(l):
@@ -826,7 +826,6 @@ print('Initial Position', xe0)  #XYP coords.
 
 massMatrixJac = jacfwd(MqPrime)
 
-TqiJac = jacfwd(TqiPrime)
 
 # V = Vq(q_hat,constants)
 # print('V', V)
@@ -847,14 +846,14 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 dt = 0.005
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
-T = 2.
+T = 5.
 
 controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
-alpha = 0.
-Kp = 20.*jnp.eye(n)
-Kd = 5.*jnp.eye(n)
+alpha = 0.02
+Kp = 50.*jnp.eye(n)
+Kd = 10.*jnp.eye(n)
 ContRate = 200. #Hz: Controller refresh rate
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
@@ -893,6 +892,13 @@ dt_obs = 1/ObsRate
 print('Observer dt',dt_obs)
 Hobs = 0.
 
+# Testing
+# TqiJac = jacfwd(TqiPrime)
+# dTidq_test = TqiJac(q_0,constants)        #this doesn't apprea to work as sqrtm mght not have a jax tracer
+# dTidq1,dTidq2,dTidq3 = unravel(dTidq_test)
+# dTqinv_test = jnp.array([dTidq1,dTidq2,dTidq3])
+
+
 Mqh0, Tq0, Tq0inv, Jc_hat0 = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 dMdq0 = massMatrixJac(q_0,constants)
 dMdq10, dMdq20, dMdq30 = unravel(dMdq0)
@@ -903,11 +909,9 @@ dTqinv0 = jnp.array([dTq0invdq1,dTq0invdq2,dTq0invdq3])
 
 # dTqinv_test = dTi(Tq0inv,dMdq10)
 
-#Testing
-# dTidq_test = TqiJac(q_0,constants)        #this doesn't apprea to work as sqrtm mght not have a jax tracer
-# dTidq1,dTidq2,dTidq3 = unravel(dTidq_test)
-# dTqinv_test = jnp.array([dTidq1,dTidq2,dTidq3])
 
+
+# # print('dTqi diff', dTqinv0 - dTqinv_test)
 # print('dTqi diff', dTq0invdq1 - dTqinv_test)
 
 while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
@@ -935,11 +939,11 @@ controlHist = jnp.zeros((3,l))      #controlling 3 states
 ##################### TRACKING PROBLEM PARAMETERS
 #solve IKM to find q_d.
 origin = jnp.array([[0.6],[0.6]])            #circle origin, or point track. XZ coords.as system is XZ planar
-frequency = 0.5
+frequency = 0.2
 amplitude = 0.1
 
-traj = 'point'      #Name Trajectory Function
-# traj = 'planar_circle'      #Name Trajectory Function
+# traj = 'point'      #Name Trajectory Function
+traj = 'planar_circle'      #Name Trajectory Function
 # traj = 'sinusoid_x'      #Name Trajectory Function
 
 traj_func = getattr(trajectories,traj)
@@ -952,7 +956,8 @@ q_d = solveIKM(xe,q_init_guess,s)      #solve IKM so trajectory is changed to ge
 # print('q_d',q_d)
 print('qd shape', jnp.shape(q_d))
 # print(q_d.at[:,0].get())
-dq_d = create_qdot(q_d,t)
+dq_d = diff_finite(q_d,t)           #velocity
+ddq_d = diff_finite(dq_d,t)         #acceleration
 
 print('SIMULATION LOOP STARTED')
 
@@ -1026,10 +1031,13 @@ for k in range(l):
             # v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
             timeConUpdate = time
 
+
+            
+
     else:
         v_control = jnp.zeros((3,1))
 
-    if gravComp == 1:
+    if gravComp == 1:           #this probably should be in the controller update?
         tau = Tq@dVdq           #tranform into momentum trnasform dynamics
     else:
         tau = jnp.zeros((3,1))
@@ -1122,7 +1130,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
 controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/point_observer_initialerror', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/circletraj_observer_initialerror', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
