@@ -792,11 +792,8 @@ q0_2 = 0.
 q0_3 = 0.
 
 q_0 = jnp.array([[q0_1,q0_2,q0_3]])
-p0 = jnp.array([1.,0.,0.])
+p_initial = jnp.array([1.,0.,-0.4])            #This initial momentum is not momentum transformed
 
-x0 = jnp.block([[q_0,p0]])
-x0 = jnp.transpose(x0)
-print('Initial States', x0)
 
 q_0 = jnp.transpose(q_0)
 s = self()
@@ -840,7 +837,6 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 
 # This simulations uses p and q hat
 (n,hold) = q_0.shape
-(m,hold) = x0.shape
 
 #Initialise Simulation Parameters
 dt = 0.005
@@ -851,14 +847,14 @@ T = 5.
 controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
-alpha = 0.02
+alpha = 0.05
 Kp = 50.*jnp.eye(n)
 Kd = 10.*jnp.eye(n)
 ContRate = 200. #Hz: Controller refresh rate
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
 timeConUpdate = 0.     #this forces an initial update at t = 0s
-v_control = jnp.zeros((3,1))
+v = jnp.zeros((3,1))
 
 #Define Friction
 # D = jnp.zeros((3,3))
@@ -868,17 +864,6 @@ endT = T - dt       #prevent truncaton
 t = jnp.arange(0,T,dt)
 l = jnp.size(t)
 
-#Define Storage
-xHist = jnp.zeros((m,l+1))
-xeHist = jnp.zeros((m,l))
-hamHist = jnp.zeros(l)
-kinHist = jnp.zeros(l)
-potHist = jnp.zeros(l)
-H0Hist = jnp.zeros(l)
-xpHist = jnp.zeros((n,l))
-phiHist = jnp.zeros(l)
-phatHist = jnp.zeros((n,l+1))
-switchHist = jnp.zeros(l)
 
 
 # OBSERVER PARAMETERS
@@ -899,27 +884,7 @@ Hobs = 0.
 # dTqinv_test = jnp.array([dTidq1,dTidq2,dTidq3])
 
 
-Mqh0, Tq0, Tq0inv, Jc_hat0 = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
-dMdq0 = massMatrixJac(q_0,constants)
-dMdq10, dMdq20, dMdq30 = unravel(dMdq0)
-dTq0invdq1 = solve_continuous_lyapunov(Tq0inv,dMdq10)
-dTq0invdq2 = solve_continuous_lyapunov(Tq0inv,dMdq20)
-dTq0invdq3 = solve_continuous_lyapunov(Tq0inv,dMdq30)
-dTqinv0 = jnp.array([dTq0invdq1,dTq0invdq2,dTq0invdq3])
 
-# dTqinv_test = dTi(Tq0inv,dMdq10)
-
-
-
-# # print('dTqi diff', dTqinv0 - dTqinv_test)
-# print('dTqi diff', dTq0invdq1 - dTqinv_test)
-
-while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
-    phitemp, xptmp = observerSwitch(q_0,phi,xp0,kappa)
-    phi = phitemp
-    xp0 = xptmp
-    print('xp0', xp0)
-    print(phi)
 
 # ### TESTING CBAR CONSTRUCTION IN DIFFERENT WAY
 
@@ -930,20 +895,14 @@ while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
 # Tq_jac = jacfwd(Tq_phat, argnums=0)
 
 
-#Setting Initial Values
-xHist = xHist.at[:,[0]].set(x0)
-phatHist = phatHist.at[:,[0]].set(phat0)
-xpHist = xpHist.at[:,[0]].set(xp0)
-controlHist = jnp.zeros((3,l))      #controlling 3 states
-
 ##################### TRACKING PROBLEM PARAMETERS
 #solve IKM to find q_d.
 origin = jnp.array([[0.6],[0.6]])            #circle origin, or point track. XZ coords.as system is XZ planar
 frequency = 0.2
 amplitude = 0.1
 
-# traj = 'point'      #Name Trajectory Function
-traj = 'planar_circle'      #Name Trajectory Function
+traj = 'point'      #Name Trajectory Function
+# traj = 'planar_circle'      #Name Trajectory Function
 # traj = 'sinusoid_x'      #Name Trajectory Function
 
 traj_func = getattr(trajectories,traj)
@@ -958,6 +917,53 @@ print('qd shape', jnp.shape(q_d))
 # print(q_d.at[:,0].get())
 dq_d = diff_finite(q_d,t)           #velocity
 ddq_d = diff_finite(dq_d,t)         #acceleration
+
+
+#Define Initial Values
+Mqh0, Tq0, Tq0inv, Jc_hat0 = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+dMdq0 = massMatrixJac(q_0,constants)
+dMdq10, dMdq20, dMdq30 = unravel(dMdq0)
+dTq0invdq1 = solve_continuous_lyapunov(Tq0inv,dMdq10)
+dTq0invdq2 = solve_continuous_lyapunov(Tq0inv,dMdq20)
+dTq0invdq3 = solve_continuous_lyapunov(Tq0inv,dMdq30)
+dTqinv0 = jnp.array([dTq0invdq1,dTq0invdq2,dTq0invdq3])
+
+# dTqinv_test = dTi(Tq0inv,dMdq10)
+
+# # print('dTqi diff', dTqinv0 - dTqinv_test)
+# print('dTqi diff', dTq0invdq1 - dTqinv_test)
+
+while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
+    phitemp, xptmp = observerSwitch(q_0,phi,xp0,kappa)
+    phi = phitemp
+    xp0 = xptmp
+    print('xp0', xp0)
+    print(phi)
+
+p0 = p_initial@Tq0                  #Transform momentum state. Note that the mutiplication is out of order because p_initial is horizontal.
+x0 = jnp.block([[q_0,p0]])
+x0 = jnp.transpose(x0)
+print('Initial States', x0)
+
+#Define Storage
+(m,hold) = x0.shape
+xHist = jnp.zeros((m,l+1))
+xeHist = jnp.zeros((m,l))
+hamHist = jnp.zeros(l)
+kinHist = jnp.zeros(l)
+potHist = jnp.zeros(l)
+H0Hist = jnp.zeros(l)
+xpHist = jnp.zeros((n,l))
+phiHist = jnp.zeros(l)
+phatHist = jnp.zeros((n,l+1))
+switchHist = jnp.zeros(l)
+
+#Setting Initial Values
+xHist = xHist.at[:,[0]].set(x0)
+phatHist = phatHist.at[:,[0]].set(phat0)
+xpHist = xpHist.at[:,[0]].set(xp0)
+controlHist = jnp.zeros((3,l))      #controlling 3 states
+
 
 print('SIMULATION LOOP STARTED')
 
@@ -999,6 +1005,8 @@ for k in range(l):
     Cqph = Cqp(phat,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
     Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
 
+    Dhat = Tq@D@Tq
+
     # result = CbSYM(jnp.zeros((3,1)),phat,Tq,dTqinv_block)
 
     # print('Cbar', result)
@@ -1021,28 +1029,45 @@ for k in range(l):
     if controlActive == 1:
         timeCon = round((time - timeConUpdate),3)
         if timeCon >= dt_con:    #update controller
+
+            if gravComp == 1:           #this probably should be in the controller update?
+                tau = Tq@dVdq           #tranform into momentum trnasform dynamics
+            else:
+                tau = jnp.zeros((3,1))
+
+
             print('Controller Updating')
-            # p_d = Tqinv@dq_d.at[:,[k]].get()                      #as p0 = Mq*qdot, and p = Tq*p0
-            p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
+            qddot = dq_d.at[:,[k]].get()  
+            qddotdot = ddq_d.at[:,[k]].get()  
+            p_d = Tqinv@qddot                  #as p0 = Mq*qdot, and p = Tq*p0
+            
+            # p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
             x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
             err = jnp.block([[q], [p]]) - x_d     #define error
             #Find Control Input for current x, xtilde
-            v_control = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
+            v_input = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
             # v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
             timeConUpdate = time
 
 
-            
+            dTiqdot_dq1 = dTqinvdq1@qddot
+            dTiqdot_dq2 = dTqinvdq2@qddot
+            dTiqdot_dq3 = dTqinvdq3@qddot
+
+            dp_d_dq = jnp.block([dTiqdot_dq1,dTiqdot_dq2,dTiqdot_dq3])      #this is from product rule
+
+
+            v = -(Cqph - Dhat)@p_d + dp_d_dq@Tq@p + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
 
     else:
-        v_control = jnp.zeros((3,1))
+        v = jnp.zeros((3,1))
 
-    if gravComp == 1:           #this probably should be in the controller update?
-        tau = Tq@dVdq           #tranform into momentum trnasform dynamics
-    else:
-        tau = jnp.zeros((3,1))
 
-    v = (tau + v_control)      #Equation 21 in the paper. Not multiplied by G^-1 as that gets cancelled with Tq multiplication in dynamics
+    # if gravComp == 1:           #tTHIS IS THE OLD LOCATION. NOW IN CONTROLLER UPDATE AS BEFITS REAL SYSTEM
+    #     tau = Tq@dVdq           #tranform into momentum trnasform dynamics
+    # else:
+    #     tau = jnp.zeros((3,1))
+    # v = (tau + v_control)      #Equation 21 in the paper. Not multiplied by G^-1 as that gets cancelled with Tq multiplication in dynamics
       # print('v',v)  
 
     #OBSERVER ODE SOLVE 
@@ -1050,6 +1075,7 @@ for k in range(l):
 
     if timeObs >= dt_obs:    #update observer
         timeObsUpdate = time
+        print('Observer Updating')
         print('Time Elapsed', timeObs)
         x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
                           [x.at[1,0].get()],
@@ -1060,7 +1086,6 @@ for k in range(l):
 
         Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
         # print('Time Elapsed', timeObs)
-        print('Observer Updating')
         obs_args = (phat,phi,v,D,constants)
                 # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
         xp_update = rk4(x_obs,ode_observer_wrapper,dt_obs,*obs_args)          #call rk4 solver to update ode
@@ -1078,6 +1103,7 @@ for k in range(l):
     # xp_k = xp           #while observer isn't working
 
     #SYSTEM ODE SOLVE
+    print('System Updating')
     args = (v,D,constants)
     x_nextstep = x
     # for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
@@ -1130,7 +1156,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
 controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/circletraj_observer_initialerror', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/demo', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
