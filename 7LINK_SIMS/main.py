@@ -787,15 +787,17 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = pi/2.
+q0_1 = 0.
 q0_2 = 0.
 q0_3 = 0.
 
-q_0 = jnp.array([[q0_1,q0_2,q0_3]])
+q_initial = jnp.array([[q0_1,q0_2,q0_3]])
 p_initial = jnp.array([1.,0.,-0.4])            #This initial momentum is not momentum transformed
+# p_initial = jnp.array([0.,0.,0.])    
 
 
-q_0 = jnp.transpose(q_0)
+
+q_0 = jnp.transpose(q_initial)
 s = self()
 s = robotParams(s)
 
@@ -842,14 +844,14 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 dt = 0.005
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
-T = 5.
+T = 3.
 
 controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
-alpha = 0.05
+alpha = 0.1
 Kp = 50.*jnp.eye(n)
-Kd = 10.*jnp.eye(n)
+Kd = 1.*jnp.eye(n)
 ContRate = 200. #Hz: Controller refresh rate
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
@@ -913,7 +915,7 @@ q_init_guess = jnp.zeros(3)         #initialise initial IKM Guess
 #TRAJECTORY TRACK
 q_d = solveIKM(xe,q_init_guess,s)      #solve IKM so trajectory is changed to generalised idsplacement coordinates.
 # print('q_d',q_d)
-print('qd shape', jnp.shape(q_d))
+# print('qd shape', jnp.shape(q_d))
 # print(q_d.at[:,0].get())
 dq_d = diff_finite(q_d,t)           #velocity
 ddq_d = diff_finite(dq_d,t)         #acceleration
@@ -941,7 +943,8 @@ while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
     print(phi)
 
 p0 = p_initial@Tq0                  #Transform momentum state. Note that the mutiplication is out of order because p_initial is horizontal.
-x0 = jnp.block([[q_0,p0]])
+print('p0',p0)
+x0 = jnp.block([[q_initial,p0]])
 x0 = jnp.transpose(x0)
 print('Initial States', x0)
 
@@ -957,12 +960,13 @@ xpHist = jnp.zeros((n,l))
 phiHist = jnp.zeros(l)
 phatHist = jnp.zeros((n,l+1))
 switchHist = jnp.zeros(l)
+controlHist = jnp.zeros((n,l))
 
 #Setting Initial Values
 xHist = xHist.at[:,[0]].set(x0)
 phatHist = phatHist.at[:,[0]].set(phat0)
 xpHist = xpHist.at[:,[0]].set(xp0)
-controlHist = jnp.zeros((3,l))      #controlling 3 states
+# controlHist = control.at[:,[0]].set(v_)      #controlling 3 states
 
 
 print('SIMULATION LOOP STARTED')
@@ -1050,7 +1054,7 @@ for k in range(l):
             timeConUpdate = time
 
 
-            dTiqdot_dq1 = dTqinvdq1@qddot
+            dTiqdot_dq1 = dTqinvdq1@qddot               #dp_d/dq = dTinv/dq @ qd_dot
             dTiqdot_dq2 = dTqinvdq2@qddot
             dTiqdot_dq3 = dTqinvdq3@qddot
 
@@ -1058,6 +1062,7 @@ for k in range(l):
 
 
             v = -(Cqph - Dhat)@p_d + dp_d_dq@Tq@p + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
+            # print('v',v)
 
     else:
         v = jnp.zeros((3,1))
@@ -1134,6 +1139,8 @@ for k in range(l):
     H0Hist = H0Hist.at[k].set(Hobs)
     print('H obs', Hobs)
     phiHist = phiHist.at[k].set(phi)
+    controlHist = controlHist.at[:,[k]].set(v)
+    # print('v',v.at[:,0].get())
 
     kinTemp = 0.5*(jnp.transpose(p.at[:,0].get())@p.at[:,0].get())
     potTemp = Vq(q,constants)
@@ -1145,7 +1152,8 @@ for k in range(l):
     # xeHist = xeHist.at[:,k].set(xe)
 
 
-
+print(controlHist)
+# print(fake)
 # print(hamHist)
 # print(stop)
 
@@ -1156,7 +1164,7 @@ for k in range(l):
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
 controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/demo', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/demo_point1', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
@@ -1166,29 +1174,32 @@ with open('/root/FYP/7LINK_SIMS/data/demo', 'w', newline='') as f:
 
     # writer.writerow(['Time', t])
     for i in range(l):
-        q1 = xHist.at[0,i].get()
+        timestamp = t.at[i].get()               #time
+        q1 = xHist.at[0,i].get()                #postion
         q2 = xHist.at[1,i].get()
         q3 = xHist.at[2,i].get()
-        p1 = xHist.at[3,i].get()
+        p1 = xHist.at[3,i].get()                #momentum (transformed)
         p2 = xHist.at[4,i].get()
         p3 = xHist.at[5,i].get()
-        ham = hamHist.at[i].get()
+        ham = hamHist.at[i].get()               #energy
         kin = kinHist.at[i].get()
         pot = potHist.at[i].get()
-        timestamp = t.at[i].get()
         qd1 = q_d.at[0,i].get()          #used to be xe - now qd, as xe can be calculated in matlab
-        qd2 = q_d.at[1,i].get()
+        qd2 = q_d.at[1,i].get()                 #Trajectory
         qd3 = q_d.at[2,i].get()
-        phat1 = phatHist.at[0,i].get()
+        phat1 = phatHist.at[0,i].get()          #estimated dmomentum
         phat2 = phatHist.at[1,i].get()
         phat3 = phatHist.at[2,i].get()
-        Hobs = H0Hist.at[i].get()
-        ph = phiHist.at[i].get()
-        xp1 = xpHist.at[0,i].get()
+        Hobs = H0Hist.at[i].get()               #Observer energy
+        ph = phiHist.at[i].get()                #phi
+        xp1 = xpHist.at[0,i].get()              #xp
         xp2 = xpHist.at[1,i].get()
         xp3 = xpHist.at[2,i].get()
-        sc = switchHist.at[i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,qd1,qd2,qd3,phat1,phat2,phat3,ph, Hobs,sc,xp1,xp2,xp3]
+        sc = switchHist.at[i].get()             #switch condition
+        v1 = controlHist.at[0,i].get()          #control values
+        v2 = controlHist.at[1,i].get()
+        v3 = controlHist.at[2,i].get()
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,qd1,qd2,qd3,phat1,phat2,phat3,ph, Hobs,sc,xp1,xp2,xp3,v1,v2,v3]
           # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)
