@@ -61,6 +61,11 @@ import threading
 
 #import custom scripts
 import sinusoid
+import numpy as jnp
+from params import robotParams
+from numpy import pi,sin,cos,linalg
+from gravcomp import gq
+
 
 
 class TorqueExample:
@@ -134,6 +139,9 @@ class TorqueExample:
         action_list = self.base.ReadAllActions(action_type)
         action_handle = None
         for action in action_list.action_list:
+            # if action.name == "Zero":     #for candlestick
+            #     action_handle = action.handle
+                
             if action.name == "Home":
                 action_handle = action.handle
 
@@ -182,9 +190,9 @@ class TorqueExample:
                 self.base_command.actuators[x].flags = 1  # servoing
                 self.base_command.actuators[x].position = self.base_feedback.actuators[x].position
 
-            # First actuator is going to be controlled in torque
-            # To ensure continuity, torque command is set to measure
-            self.base_command.actuators[0].torque_joint = self.base_feedback.actuators[0].torque
+            # Sixth actuator is going to be controlled in torque
+            # To ensure continuity, torque command is set to opp measure to hold still
+            self.base_command.actuators[5].torque_joint = -self.base_feedback.actuators[5].torque
 
             # Set arm in LOW_LEVEL_SERVOING
             base_servo_mode = Base_pb2.ServoingModeInformation()
@@ -197,7 +205,7 @@ class TorqueExample:
             # Set first actuator in torque mode now that the command is equal to measure
             control_mode_message = ActuatorConfig_pb2.ControlModeInformation()
             control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
-            device_id = 1  # first actuator as id = 1
+            device_id = 6  # first actuator as id = 1, last is id = 7
 
             self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
 
@@ -244,14 +252,16 @@ class TorqueExample:
                 # Bonus: When doing this instead of disabling the following error, if communication is lost and first
                 #        actuator continue to move under torque command, resulting position error with command will
                 #        trigger a following error and switch back the actuator in position command to hold its position
-                self.base_command.actuators[0].position = self.base_feedback.actuators[0].position
+                self.base_command.actuators[5].position = self.base_feedback.actuators[5].position
 
-                # First actuator torque command is set to last actuator torque measure times an amplification
-                self.base_command.actuators[0].torque_joint = init_first_torque + \
-                    self.torque_amplification * (self.base_feedback.actuators[self.actuator_count - 1].torque - init_last_torque)
+                q = jnp.array([[self.base_feedback.actuators[1].position]
+                               [self.base_feedback.actuators[3].position]
+                               [self.base_feedback.actuators[5].position]])
+                
+                grav = gq(q)
 
-                # First actuator position is sent as a command to last actuator
-                self.base_command.actuators[self.actuator_count - 1].position = self.base_feedback.actuators[0].position - init_delta_position
+                # Grav comp is sent to sixth actuator
+                self.base_command.actuators[5].torque_joint = grav.at[2,0].get()
 
                 # Incrementing identifier ensure actuators can reject out of time frames
                 self.base_command.frame_id += 1
@@ -322,6 +332,10 @@ class TorqueExample:
         if i == retry:
             print("Failed to communicate")
         return arg_out
+    
+class self:
+    def __init___(self):
+        return 'initialised'
 
 def main():
     # Import the utilities helper module
@@ -335,6 +349,21 @@ def main():
     parser.add_argument("--duration", type=int, help="example duration, in seconds (0 means infinite)", default=30)
     parser.add_argument("--print_stats", default=True, help="print stats in command line or not (0 to disable)", type=lambda x: (str(x).lower() not in ['false', '0', 'no']))
     args = utilities.parseConnectionArguments(parser)
+
+    #Initial values for movement
+    #INITIAL VALUES
+    q0_1 = pi/2.
+    q0_2 = 0.
+    q0_3 = 0.
+
+    q_initial = jnp.array([[q0_1,q0_2,q0_3]])
+    p_initial = jnp.array([1.,0.,-0.4])            #This initial momentum is not momentum transformed
+    # p_initial = jnp.array([0.,0.,0.])    
+
+
+
+    q_0 = jnp.transpose(q_initial)
+
 
     # Create connection to the device and get the router
     with utilities.DeviceConnection.createTcpConnection(args) as router:
