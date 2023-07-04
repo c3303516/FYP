@@ -16,8 +16,7 @@ import csv
 
 def sinusoid(t,origin,freq,amp):            #provides sinusoid based on centre, amplitude, and frequency
     #plane is xz plane.
-    var0 = origin.at[0].get()
-
+    var0 = origin
     var0_vec = var0*jnp.ones(jnp.size(t))
 
     var = amp*sin(2*pi*freq*t) + var0
