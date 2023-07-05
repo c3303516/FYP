@@ -129,10 +129,6 @@ class TorqueExample:
     
 
     def set_initial_position(self):
-        # Make sure the arm is in Single Level Servoing mode
-        base_servo_mode = Base_pb2.ServoingModeInformation()
-        base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
-        self.base.SetServoingMode(base_servo_mode)
 
         print("Starting angular action movement ...")
         action = Base_pb2.Action()
@@ -141,14 +137,17 @@ class TorqueExample:
         
         # Place arm straight up
         for joint_id in range(self.actuator_count):
-            joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
-            joint_angle.joint_identifier = joint_id
-            joint_angle.value = 0
+            # print('jointid',joint_id)
+            if (joint_id == 5):
+                joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
+                joint_angle.joint_identifier = joint_id
+                joint_angle.value = 90
+            else:
+                joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
+                joint_angle.joint_identifier = joint_id
+                joint_angle.value = 0
 
-        #set second joint to 45deg
-        joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
-        joint_angle.joint_identifier = 1        #as actuator count will max at 6
-        joint_angle.value = 45
+
 
         e = threading.Event()
         notification_handle = self.base.OnNotificationActionTopic(
@@ -164,6 +163,7 @@ class TorqueExample:
         self.base.Unsubscribe(notification_handle)
 
         if finished:
+            time.sleep(1.)
             print("Angular movement completed")
         else:
             print("Timeout on action notification wait")
@@ -189,6 +189,8 @@ class TorqueExample:
                 
             # if action.name == "Home":
                 # action_handle = action.handle
+
+        print(action_list)
 
         if action_handle == None:
             print("Can't reach safe position. Exiting")
@@ -239,16 +241,6 @@ class TorqueExample:
         print('sampling time', sampling_time_cyclic)
         print('l',l,l_short)
         
-        # for k in range(l):
-        #     v1 = u1[k]
-        #     v2 = u2[k]
-        #     v3 = u3[k]
-        #     if (k>l_short):
-        #         v1 = 0
-        #         v2 = 0
-        #         v3 = 0
-                
-        #     self.userControl[:,[k]] = jnp.array([[v1],[v2],[v3]])
 
 
         return
@@ -264,7 +256,7 @@ class TorqueExample:
 
         # Move to initial conditions
         # if not self.set_initial_position():
-        #     return False
+            # return False
 
         print("Init Cyclic")
         sys.stdout.flush()
@@ -309,7 +301,7 @@ class TorqueExample:
             control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
             device_id = 4  # first actuator as id = 1, last is id = 7
 
-            self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+            # self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
 
 
             # Set sixth actuator in torque mode now that the command is equal to measure
@@ -317,7 +309,7 @@ class TorqueExample:
             control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
             device_id = 6  # first actuator as id = 1, last is id = 7
 
-            self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+            # self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
 
             # Init cyclic thread
             self.cyclic_t_end = t_end
@@ -345,12 +337,12 @@ class TorqueExample:
         timetemp = self.timeStore
 
         #define sinusoide amplitudes, freqs
-        amp1 = 0.
-        freq1 = 0.2
+        amp1 = 25.
+        freq1 = 0.75
         amp2 = 0.
-        freq2 = 0.75
+        freq2 = 0.5
         amp3 = 0.
-        freq3 = 0.75
+        freq3 = 0.5
 
 
         
@@ -417,7 +409,7 @@ class TorqueExample:
                 grav = gq(q)
                 timetemp[counter] = t_elapsed  #time since script started
 
-                if (t_elapsed < (self.cyclic_t_end - 2)):
+                if (t_elapsed < (self.cyclic_t_end - 5)):
                     v1 = sinusoid_instant(t_elapsed,0.,freq1,amp1)
                     v2 = sinusoid_instant(t_elapsed,0.,freq2,amp2)
                     v3 = sinusoid_instant(t_elapsed,0.,freq3,amp3)
@@ -432,10 +424,10 @@ class TorqueExample:
                 gq2 = grav[3,0]
                 gq3 = grav[5,0]
 
-                u1 = gq1 #+ v1
-                u2 = gq2 #+ v2
-                u3 = gq3 #+ v3
-                print('u1',u1)
+                u1 = 2*gq1 + v1
+                u2 = 2*gq2 #+ v2
+                u3 = 2*gq3 #+ v3
+                # print('u1',u1)
                 self.base_command.actuators[1].torque_joint = u1
                 # Grav comp is sent to fourth actuator
                 self.base_command.actuators[3].torque_joint = u2
@@ -540,7 +532,7 @@ class TorqueExample:
         details = ['Saved Data from Physical Implementation! This file has double grav comp so the robot arm swings to a vertical position']
         values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
         header = ['Time', 'State History']
-        with open('C:/Users/Mark/Documents/FYP/python_api/api_python/examples/108-Gen3_torque_control/data/freeswing_inverted_v1', 'w', newline='') as f:
+        with open('/root/FYP/Kinova/examples/108-Gen3_torque_control/data/sinusoid_inverted_v1_2', 'w', newline='') as f:
 
             writer = csv.writer(f)
             # writer.writerow(simtype)
@@ -613,6 +605,7 @@ def main():
 
             example = TorqueExample(router, router_real_time)
             args.cyclic_time = 0.005
+            # args.duration = 20
             example.InitStorage(args.cyclic_time, args.duration)
             success = example.InitCyclic(args.cyclic_time, args.duration, args.print_stats)
 
