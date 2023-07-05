@@ -60,11 +60,12 @@ import sys
 import threading
 
 #import custom scripts
-import sinusoid
+from sinusoid import sinusoid, sinusoid_instant
 import numpy as jnp
 from params import robotParams
 from numpy import pi,sin,cos,linalg
 from gravcomp import gq
+import csv
 
 
 
@@ -125,6 +126,50 @@ class TorqueExample:
             or notification.action_event == Base_pb2.ACTION_ABORT:
                 e.set()
         return check
+    
+
+    def set_initial_position(self):
+        # Make sure the arm is in Single Level Servoing mode
+        base_servo_mode = Base_pb2.ServoingModeInformation()
+        base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+        self.base.SetServoingMode(base_servo_mode)
+
+        print("Starting angular action movement ...")
+        action = Base_pb2.Action()
+        action.name = "Example angular action movement"
+        action.application_data = ""
+        
+        # Place arm straight up
+        for joint_id in range(self.actuator_count):
+            joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
+            joint_angle.joint_identifier = joint_id
+            joint_angle.value = 0
+
+        #set second joint to 45deg
+        joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
+        joint_angle.joint_identifier = 1        #as actuator count will max at 6
+        joint_angle.value = 45
+
+        e = threading.Event()
+        notification_handle = self.base.OnNotificationActionTopic(
+            self.check_for_end_or_abort(e),
+            Base_pb2.NotificationOptions()
+        )
+        
+        print("Executing action")
+        self.base.ExecuteAction(action)
+
+        print("Waiting for movement to finish ...")
+        finished = e.wait(self.ACTION_TIMEOUT_DURATION)
+        self.base.Unsubscribe(notification_handle)
+
+        if finished:
+            print("Angular movement completed")
+        else:
+            print("Timeout on action notification wait")
+        return finished
+    
+        return True
 
     def MoveToHomePosition(self):
         # Make sure the arm is in Single Level Servoing mode
@@ -139,11 +184,11 @@ class TorqueExample:
         action_list = self.base.ReadAllActions(action_type)
         action_handle = None
         for action in action_list.action_list:
-            # if action.name == "Zero":     #for candlestick
-            #     action_handle = action.handle
-                
-            if action.name == "Home":
+            if action.name == "Zero":     #for candlestick
                 action_handle = action.handle
+                
+            # if action.name == "Home":
+                # action_handle = action.handle
 
         if action_handle == None:
             print("Can't reach safe position. Exiting")
@@ -162,12 +207,51 @@ class TorqueExample:
         self.base.Unsubscribe(notification_handle)
 
         if finished:
+            time.sleep(1.)
             print("Cartesian movement completed")
         else:
             print("Timeout on action notification wait")
         return finished
 
         return True
+    
+    def InitStorage(self, sampling_time_cyclic, t_end):
+        #define storage for the q and velocity for processing
+        i = self.actuator_count
+        self.t = jnp.arange(0,t_end,sampling_time_cyclic)
+        l = jnp.size(self.t)
+        self.q_storage = jnp.zeros((i,l))
+        self.vel_storage = jnp.zeros((i,l))
+        self.userControl = jnp.zeros((3,l))
+        self.controlHist = jnp.zeros((3,l))
+        self.timeStore = jnp.zeros(l)
+
+        
+        trucated_t = jnp.arange(0,(t_end-2.),sampling_time_cyclic)      #this is used as a safety. Last 2 seconds will have 0 torques
+
+        #also define the control actions that we're gonna take.
+
+        u1 = sinusoid(self.t,0.,0.1,0.)     #t,origin,freq,amp)         #need a way to stabilise the sinusoid wrt. time.
+        u2 = sinusoid(self.t,0.,0.5,0.)     #t,origin,freq,amp)
+        u3 = sinusoid(self.t,0.,0.5,3.)     #t,origin,freq,amp)
+        l_short = jnp.size(trucated_t)
+
+        print('sampling time', sampling_time_cyclic)
+        print('l',l,l_short)
+        
+        # for k in range(l):
+        #     v1 = u1[k]
+        #     v2 = u2[k]
+        #     v3 = u3[k]
+        #     if (k>l_short):
+        #         v1 = 0
+        #         v2 = 0
+        #         v3 = 0
+                
+        #     self.userControl[:,[k]] = jnp.array([[v1],[v2],[v3]])
+
+
+        return
 
     def InitCyclic(self, sampling_time_cyclic, t_end, print_stats):
 
@@ -177,6 +261,10 @@ class TorqueExample:
         # Move to Home position first
         if not self.MoveToHomePosition():
             return False
+
+        # Move to initial conditions
+        # if not self.set_initial_position():
+        #     return False
 
         print("Init Cyclic")
         sys.stdout.flush()
@@ -189,6 +277,13 @@ class TorqueExample:
             for x in range(self.actuator_count):
                 self.base_command.actuators[x].flags = 1  # servoing
                 self.base_command.actuators[x].position = self.base_feedback.actuators[x].position
+            # 2nd actuator is going to be controlled in torque
+            # To ensure continuity, torque command is set to opp measure to hold still
+            self.base_command.actuators[1].torque_joint = -self.base_feedback.actuators[3].torque
+                
+            # 4th actuator is going to be controlled in torque
+            # To ensure continuity, torque command is set to opp measure to hold still
+            self.base_command.actuators[3].torque_joint = -self.base_feedback.actuators[3].torque
 
             # Sixth actuator is going to be controlled in torque
             # To ensure continuity, torque command is set to opp measure to hold still
@@ -202,7 +297,22 @@ class TorqueExample:
             # Send first frame
             self.base_feedback = self.base_cyclic.Refresh(self.base_command, 0, self.sendOption)
 
-            # Set first actuator in torque mode now that the command is equal to measure
+            # Set second actuator in torque mode now that the command is equal to measure
+            control_mode_message = ActuatorConfig_pb2.ControlModeInformation()
+            control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
+            device_id = 2  # first actuator as id = 1, last is id = 7
+            
+            self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+
+            # Set fourth actuator in torque mode now that the command is equal to measure
+            control_mode_message = ActuatorConfig_pb2.ControlModeInformation()
+            control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
+            device_id = 4  # first actuator as id = 1, last is id = 7
+
+            self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+
+
+            # Set sixth actuator in torque mode now that the command is equal to measure
             control_mode_message = ActuatorConfig_pb2.ControlModeInformation()
             control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
             device_id = 6  # first actuator as id = 1, last is id = 7
@@ -228,18 +338,43 @@ class TorqueExample:
         stats_count = 0  # Counts stats prints
         failed_cyclic_count = 0  # Count communication timeouts
 
+        controlActions_temp = self.userControl
+        q_storage_temp = self.q_storage
+        vel_storage_temp = self.vel_storage
+        controlHist_temp = self.controlHist
+        timetemp = self.timeStore
+
+        #define sinusoide amplitudes, freqs
+        amp1 = 0.
+        freq1 = 0.2
+        amp2 = 0.
+        freq2 = 0.75
+        amp3 = 0.
+        freq3 = 0.75
+
+
+        
+        q_bold1 = (pi/180.)*self.base_feedback.actuators[0].position
+        q_bold2 = (pi/180.)*self.base_feedback.actuators[2].position
+        q_bold3 = (pi/180.)*self.base_feedback.actuators[4].position
+        q_bold4 = (pi/180.)*self.base_feedback.actuators[6].position
+
         # Initial delta between first and last actuator
-        init_delta_position = self.base_feedback.actuators[0].position - self.base_feedback.actuators[self.actuator_count - 1].position
+        # init_delta_position = self.base_feedback.actuators[0].position - self.base_feedback.actuators[self.actuator_count - 1].position
 
         # Initial first and last actuator torques; avoids unexpected movement due to torque offsets
-        init_last_torque = self.base_feedback.actuators[self.actuator_count - 1].torque
-        init_first_torque = -self.base_feedback.actuators[0].torque  # Torque measure is reversed compared to actuator direction
+        init_fourth_torque = self.base_feedback.actuators[3].torque
+        init_second_torque = self.base_feedback.actuators[1].torque  
+        init_sixth_torque = self.base_feedback.actuators[5].torque
+
+        print('Initial Torque',init_second_torque,init_fourth_torque,init_sixth_torque)
 
         t_now = time.time()
         t_cyclic = t_now  # cyclic time
         t_stats = t_now  # print  time
         t_init = t_now  # init   time
-
+        # tic = 0
+        counter = 0
         print("Running torque control example for {} seconds".format(self.cyclic_t_end))
 
         while not self.kill_the_thread:
@@ -248,21 +383,67 @@ class TorqueExample:
             # Cyclic Refresh
             if (t_now - t_cyclic) >= t_sample:
                 t_cyclic = t_now
+                
                 # Position command to first actuator is set to measured one to avoid following error to trigger
                 # Bonus: When doing this instead of disabling the following error, if communication is lost and first
                 #        actuator continue to move under torque command, resulting position error with command will
                 #        trigger a following error and switch back the actuator in position command to hold its position
+                
+                self.base_command.actuators[1].position = self.base_feedback.actuators[1].position
+                self.base_command.actuators[3].position = self.base_feedback.actuators[3].position
                 self.base_command.actuators[5].position = self.base_feedback.actuators[5].position
 
-                q = jnp.array([[self.base_feedback.actuators[1].position]
-                               [self.base_feedback.actuators[3].position]
-                               [self.base_feedback.actuators[5].position]])
-                
+                q1 = (pi/180.)*self.base_feedback.actuators[1].position
+                q2 = (pi/180.)*self.base_feedback.actuators[3].position
+                q3 = (pi/180.)*self.base_feedback.actuators[5].position
+                #Constant values. Will measure feedback to ensure model is always correct
+                # print('q1',q1)
+                q = jnp.array([[q_bold1],
+                               [q1],
+                               [q_bold2],
+                               [q2],
+                               [q_bold3],
+                               [q3],
+                               [q_bold4]])
+
+                q1dot = self.base_feedback.actuators[1].velocity
+                q2dot = self.base_feedback.actuators[3].velocity
+                q3dot = self.base_feedback.actuators[5].velocity
+
+                # print('q2dot', q2dot)
+
+                t_elapsed = t_now - t_init
+                #get control actions
                 grav = gq(q)
+                timetemp[counter] = t_elapsed  #time since script started
 
+                if (t_elapsed < (self.cyclic_t_end - 2)):
+                    v1 = sinusoid_instant(t_elapsed,0.,freq1,amp1)
+                    v2 = sinusoid_instant(t_elapsed,0.,freq2,amp2)
+                    v3 = sinusoid_instant(t_elapsed,0.,freq3,amp3)
+                    # v3 = controlActions_temp[2,counter]
+                else:           #set torques to 0 to slow down
+                    print('slowing')
+                    v1 = 0
+                    v2 = 0
+                    v3 = 0
+
+                gq1 = grav[1,0]
+                gq2 = grav[3,0]
+                gq3 = grav[5,0]
+
+                u1 = gq1 #+ v1
+                u2 = gq2 #+ v2
+                u3 = gq3 #+ v3
+                print('u1',u1)
+                self.base_command.actuators[1].torque_joint = u1
+                # Grav comp is sent to fourth actuator
+                self.base_command.actuators[3].torque_joint = u2
                 # Grav comp is sent to sixth actuator
-                self.base_command.actuators[5].torque_joint = grav.at[2,0].get()
+                self.base_command.actuators[5].torque_joint = u3
 
+                # self.base_command.actuators[5].torque_joint = 0
+                # self.base_command.actuators[5].torque_joint = -self.base_feedback.actuators[5].torque
                 # Incrementing identifier ensure actuators can reject out of time frames
                 self.base_command.frame_id += 1
                 if self.base_command.frame_id > 65535:
@@ -277,6 +458,21 @@ class TorqueExample:
                     failed_cyclic_count = failed_cyclic_count + 1
                 cyclic_count = cyclic_count + 1
 
+                #store
+                controlHist_temp[:,[counter]] = jnp.array([[u1],[u2],[u3]])
+
+                q_storage_temp[:,[counter]] = q
+                vel_storage_temp[:,[counter]] = jnp.array([[0],
+                               [q1dot],
+                               [0],
+                               [q2dot],
+                               [0],
+                               [q3dot],
+                               [0]])
+
+                
+                counter = counter + 1       #index
+
             # Stats Print
             if print_stats and ((t_now - t_stats) > 1):
                 t_stats = t_now
@@ -289,6 +485,20 @@ class TorqueExample:
             if self.cyclic_t_end != 0 and (t_now - t_init > self.cyclic_t_end):
                 print("Cyclic Finished")
                 sys.stdout.flush()
+                #get data where it needs to be
+                self.userControl = controlActions_temp
+                self.q_storage = q_storage_temp
+                self.vel_storage = (pi/180.)*vel_storage_temp
+                self.controlHist = controlHist_temp
+                self.timeStore = timetemp
+                # print(vel_storage_temp)
+                self.a1 = amp1
+                self.a2 = amp2
+                self.a3 = amp3
+                self.f1 = freq1
+                self.f2 = freq2
+                self.f3 = freq3
+
                 break
         self.cyclic_running = False
         return True
@@ -306,7 +516,12 @@ class TorqueExample:
         # Set first actuator back in position mode
         control_mode_message = ActuatorConfig_pb2.ControlModeInformation()
         control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('POSITION')
-        device_id = 1  # first actuator has id = 1
+        
+        device_id = 2  # first actuator has id = 1
+        self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+        device_id = 4  # first actuator has id = 1
+        self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+        device_id = 6  # first actuator has id = 1
         self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
         
         base_servo_mode = Base_pb2.ServoingModeInformation()
@@ -317,6 +532,45 @@ class TorqueExample:
         self.already_stopped = True
         
         print('Clean Exit')
+
+    def SaveData(self):
+        print('Saving Data')
+        l = jnp.size(self.t)
+        
+        details = ['Saved Data from Physical Implementation!']
+        values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
+        header = ['Time', 'State History']
+        with open('C:/Users/Mark/Documents/FYP/python_api/api_python/examples/108-Gen3_torque_control/data/v1', 'w', newline='') as f:
+
+            writer = csv.writer(f)
+            # writer.writerow(simtype)
+            writer.writerow(details)
+            writer.writerow(values)
+            writer.writerow(header)
+
+            # writer.writerow(['Time', t])
+            for i in range(l):
+                timestamp = self.timeStore[i]           #time
+                q1 = self.q_storage[0,i]               #postion
+                q2 = self.q_storage[1,i]
+                q3 = self.q_storage[2,i]
+                q4 = self.q_storage[3,i]
+                q5 = self.q_storage[4,i]
+                q6 = self.q_storage[5,i]
+                q7 = self.q_storage[6,i]
+                qdot1 = self.vel_storage[0,i]               #momentum (transformed)
+                qdot2 = self.vel_storage[1,i]
+                qdot3 = self.vel_storage[2,i]
+                v1 = self.controlHist[0,i]       #control values
+                v2 = self.controlHist[1,i] 
+                v3 = self.controlHist[2,i] 
+                data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,qdot1,qdot2,qdot3, v1,v2,v3]
+                
+                writer.writerow(data)
+
+
+        print('Data Saved!')
+        return
 
     @staticmethod
     def SendCallWithRetry(call, retry,  *args):
@@ -345,24 +599,11 @@ def main():
 
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cyclic_time", type=float, help="delay, in seconds, between cylic control call", default=0.001)
+    parser.add_argument("--cyclic_time", type=float, help="delay, in seconds, between cylic control call", default=0.001)   #was initially 0.001
     parser.add_argument("--duration", type=int, help="example duration, in seconds (0 means infinite)", default=30)
     parser.add_argument("--print_stats", default=True, help="print stats in command line or not (0 to disable)", type=lambda x: (str(x).lower() not in ['false', '0', 'no']))
     args = utilities.parseConnectionArguments(parser)
 
-    #Initial values for movement
-    #INITIAL VALUES
-    q0_1 = pi/2.
-    q0_2 = 0.
-    q0_3 = 0.
-
-    q_initial = jnp.array([[q0_1,q0_2,q0_3]])
-    p_initial = jnp.array([1.,0.,-0.4])            #This initial momentum is not momentum transformed
-    # p_initial = jnp.array([0.,0.,0.])    
-
-
-
-    q_0 = jnp.transpose(q_initial)
 
 
     # Create connection to the device and get the router
@@ -371,7 +612,8 @@ def main():
         with utilities.DeviceConnection.createUdpConnection(args) as router_real_time:
 
             example = TorqueExample(router, router_real_time)
-
+            args.cyclic_time = 0.005
+            example.InitStorage(args.cyclic_time, args.duration)
             success = example.InitCyclic(args.cyclic_time, args.duration, args.print_stats)
 
             if success:
@@ -383,6 +625,8 @@ def main():
                         break
             
                 example.StopCyclic()
+
+                example.SaveData()
 
             return 0 if success else 1
 

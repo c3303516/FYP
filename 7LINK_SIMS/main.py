@@ -362,7 +362,7 @@ def MqPrime(q_hat,constants):
         
     return Mprime
 
-def TqiPrime(q_hat,constants):           #used in creating a Tqinv stack for dTinvdq calcs
+def TqiPrime(q_hat,constants):           #used in creating a Tqinv stack for dTinvdq calcs. #Legacy
     Mq = massMatrix_continuous(q_hat,constants)
     A = jnp.array([
         [0.,0.,0.],
@@ -826,7 +826,19 @@ print('Initial Position', xe0)  #XYP coords.
 
 massMatrixJac = jacfwd(MqPrime)
 
+Mq_print = massMatrix_continuous(q_0,constants)
+print('Mq', jnp.transpose(holonomicTransform)@Mq_print@holonomicTransform)
 
+dMdq_print = massMatrixJac(q_0,constants)
+
+
+dMdq1, dMdq2, dMdq3 = unravel(dMdq_print)
+print('dMdq', dMdq1)
+print('dMdq', dMdq2)
+print('dMdq', dMdq3)
+print('size', jnp.shape(dMdq_print))
+
+print(fake)
 # V = Vq(q_hat,constants)
 # print('V', V)
 dV_func = jacfwd(Vq,argnums=0)
@@ -836,7 +848,7 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 
 mad, tad, tadi, grav = gq(q_0,s)
 
-print('grav', grav)
+# print('grav', grav)
 print(fake)
 
 ################################## SIMULATION/PLOT############################################

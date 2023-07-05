@@ -1,7 +1,6 @@
 
-import jax.numpy as jnp
-from jax.numpy import pi, sin, cos, linalg
-from jax import grad, jacobian, jacfwd
+import numpy as jnp
+from numpy import pi, sin, cos, linalg
 
 def skew(u):
     ans = jnp.block([[0., -u[2], u[1]],
