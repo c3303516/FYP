@@ -125,9 +125,9 @@ def massMatrix_continuous(q_hat,qconstants):
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
     q4 = q_bold.at[4].get()
-    q6 = q_bold.at[5].get()
+    q2 = q_bold.at[5].get()
 
-    q2 = q_hat.at[0].get()
+    q6 = q_hat.at[0].get()
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
     # print('q1',q1)
@@ -345,11 +345,11 @@ def MqPrime(q_hat,constants):
     Mq = massMatrix_continuous(q_hat,constants)
     A = jnp.array([
         [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
         [1.],
-        [0.],
-        [0.],
-        [0.],
-        [0.],
         [0.],
     ])
     
@@ -431,9 +431,9 @@ def Vq(q_hat, qconstants):
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
     q4 = q_bold.at[4].get()
-    q6 = q_bold.at[5].get()
+    q2 = q_bold.at[5].get()
 
-    q2 = q_hat.at[0].get()
+    q6 = q_hat.at[0].get()
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
 
@@ -806,13 +806,13 @@ def observerSwitch(q,phi,xp,kappa):
 
 ####### IMPORT REAL DATA ######################
 
-data = pd.read_csv("7LINK_IMPLEMENTATION/data/sinusoid_inverted_v1",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
+data = pd.read_csv("7LINK_IMPLEMENTATION/data/sinusoid_inverted_v3",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
 print(data.head())      #prints first 5 rows. tail() prints last 5
 
 data_array = data.to_numpy()
 
 start = 1000
-end = 1100      #this ill be 2000 later
+end = 1500      #this ill be 2000 later
 t = data_array[start:end,[1]]
 t = t.astype('float32')
 t = jnp.transpose(t)
@@ -854,11 +854,11 @@ s.constants = constants         #for holonomic transform
 
 holonomicTransform = jnp.array([
         [0.],
-        [1.],         #only actuator we car about? might have to reduce the rows. write this out.
+        [0.],         #only actuator we car about? might have to reduce the rows. write this out.
         [0.],
         [0.],
         [0.],
-        [0.],
+        [1.],
         [0.],
     ])
 
@@ -915,7 +915,7 @@ for k in range(l):
     p0 = Mq_hat@vel
     p = Tq@p0
     # print(p)
-    pHist = pHist.at[:,[l]].set(p)
+    pHist = pHist.at[:,[k]].set(p)
 
 
 
@@ -965,8 +965,8 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
         dt_instant = dt.at[:,k].get()
         print('dt',dt_instant)
 
-        v = controlHist.at[[0],[k]].get()     #extract control applied to the robot
-        print('shape v',jnp.shape(v))
+        v = controlHist.at[[2],[k]].get()     #extract control applied to the robot
+        # print('shape v',jnp.shape(v))
         x = x_sim.at[:,[k]].get()
         # q = jnp.array([[x.at[0,0].get()],
         #             [x.at[1,0].get()],
@@ -975,7 +975,7 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
         #             [x.at[4,0].get()],
         #             [x.at[5,0].get()]])
         # print(q,p)
-        print('shape x', jnp.shape(x))
+        # print('shape x', jnp.shape(x))
 
         # Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 
@@ -1017,15 +1017,15 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
 
 def optimisationCost(dampP,X,simFunc,xstart,controlHist,t,dt):
     
-    simX = simFunc(xstart,controlHist,t,dt,dampP)
     m,n = jnp.shape(X)
-
-    cost = linalg.norm(X[[0],:]-simX[[0],(n-1)])+linalg.norm(X[[1],:]-simX[[1],(n-1)])+linalg.norm(X[[2],:]-simX[[2],(n-1)])
+    print('m',m)
+    simX = simFunc(xstart,controlHist,t,dt,dampP)
+    cost = linalg.norm(X[[0],:]-simX[[0],0:n])#+linalg.norm(X[[1],:]-simX[[1],(n-1)])+linalg.norm(X[[2],:]-simX[[2],(n-1)])
     return cost
 
 args = (qHist,simulation,x0,controlHist,t,dt)
-dampingParamInitial = 5.
-dampingParamOpt = fmin(optimisationCost,dampingParamInitial,args)
+dampingParamInitial = 5.        #optimisation indicates this is best? find that odd
+dampingParamOpt = fmin(optimisationCost,dampingParamInitial,args,disp=True)
 
 print('Damping Param',dampingParamOpt)
 
@@ -1034,6 +1034,12 @@ print('Damping Param',dampingParamOpt)
 # print(hamHist)
 print('No save')
 print(fake)
+
+
+### DAMPING PARAM RESULTS
+#2nd joint: 5.          NEEED TO DO THIS SIM AGIN
+#4th joint: Haven't done optimsation but will assume it is same as first joint.
+#6th joint: 5 - apparently??? idk run sims to chck
 
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################

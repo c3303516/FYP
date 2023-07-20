@@ -16,7 +16,7 @@ import csv
 
 # @partial(jax.jit, static_argnames=['s'])
 # def dynamics_Transform(x,Mq,Tq,dMdq_values,dTqinvdq_values,dVdq, gravComp,x_err,s): #need to put in constants
-# @jax.jit
+@jax.jit
 def dynamics_Transform(x,v,D,Tq,dTqinvdq_values,dVdq): #need to put in constants
         ###################3 THIS FUNCTION IS EDITED FOR A SIZE 2 X VECTOR
     q2 = x.at[0,0].get()      #make the full q vector
