@@ -838,7 +838,7 @@ print('dMdq', dMdq2)
 print('dMdq', dMdq3)
 print('size', jnp.shape(dMdq_print))
 
-print(fake)
+# print(fake)
 # V = Vq(q_hat,constants)
 # print('V', V)
 dV_func = jacfwd(Vq,argnums=0)
@@ -846,10 +846,10 @@ dV_func = jacfwd(Vq,argnums=0)
 #compute \barC matrix
 CbSYM = jacfwd(C_SYS,argnums=0)
 
-mad, tad, tadi, grav = gq(q_0,s)
+# mad, tad, tadi, grav = gq(q_0,s)
 
 # print('grav', grav)
-print(fake)
+# print(fake)
 
 ################################## SIMULATION/PLOT############################################
 
@@ -877,7 +877,8 @@ v = jnp.zeros((3,1))
 #Define Friction
 # D = jnp.zeros((3,3))
 D = 1.*jnp.eye(n)          #check this imple
-
+D_obs = jnp.array([5.0465087890625,5.0465087890625,5.079345703125])@jnp.eye(n)
+                        #^ as determined from optimisation
 endT = T - dt       #prevent truncaton
 t = jnp.arange(0,T,dt)
 l = jnp.size(t)
@@ -1003,8 +1004,6 @@ for k in range(l):
     # print(q,p)
 
     xp = xpHist.at[:,[k]].get()
-
-
     phat = xp + phi*q           #find phat for this timestep
 
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
@@ -1107,7 +1106,7 @@ for k in range(l):
 
         Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
         # print('Time Elapsed', timeObs)
-        obs_args = (phat,phi,v,D,constants)
+        obs_args = (phat,phi,v,D_obs,constants)
                 # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
         xp_update = rk4(x_obs,ode_observer_wrapper,dt_obs,*obs_args)          #call rk4 solver to update ode
         # print('xp_update', xp_update)
@@ -1163,7 +1162,7 @@ for k in range(l):
     hamTemp = kinTemp + potTemp   
 
     hamHist = hamHist.at[k].set(hamTemp)
-    kinHist = kinHist.at[k].set(kinTemp)        #CHANGE THIS BACK
+    kinHist = kinHist.at[k].set(kinTemp)     
     potHist = potHist.at[k].set(potTemp)
     # xeHist = xeHist.at[:,k].set(xe)
 

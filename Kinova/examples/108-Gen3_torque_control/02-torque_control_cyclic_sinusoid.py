@@ -462,13 +462,11 @@ class TorqueExample:
                 controlHist_temp[:,[counter]] = jnp.array([[u1],[u2],[u3]])
 
                 q_storage_temp[:,[counter]] = q
-                vel_storage_temp[:,[counter]] = jnp.array([[0],
+                vel_storage_temp[:,[counter]] = jnp.array([
                                [q1dot],
-                               [0],
                                [q2dot],
-                               [0],
                                [q3dot],
-                               [0]])
+                               ])
 
                 
                 counter = counter + 1       #index

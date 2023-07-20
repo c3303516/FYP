@@ -138,10 +138,10 @@ class TorqueExample:
         # Place arm straight up
         for joint_id in range(self.actuator_count):
             # print('jointid',joint_id)
-            if (joint_id == 5):
+            if (joint_id == 1):
                 joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
                 joint_angle.joint_identifier = joint_id
-                joint_angle.value = 90
+                joint_angle.value = 45
             else:
                 joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
                 joint_angle.joint_identifier = joint_id
@@ -294,14 +294,14 @@ class TorqueExample:
             control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
             device_id = 2  # first actuator as id = 1, last is id = 7
             
-            # self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+            self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
 
             # Set fourth actuator in torque mode now that the command is equal to measure
             control_mode_message = ActuatorConfig_pb2.ControlModeInformation()
             control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
             device_id = 4  # first actuator as id = 1, last is id = 7
 
-            # self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+            self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
 
 
             # Set sixth actuator in torque mode now that the command is equal to measure
@@ -337,11 +337,11 @@ class TorqueExample:
         timetemp = self.timeStore
 
         #define sinusoide amplitudes, freqs
-        amp1 = 25.
-        freq1 = 0.75
-        amp2 = 15.
+        amp1 = 15.
+        freq1 = 1.
+        amp2 = 0.
         freq2 = 0.5
-        amp3 = 10.
+        amp3 = 0.
         freq3 = 0.5
 
 
@@ -424,9 +424,9 @@ class TorqueExample:
                 gq2 = grav[3,0]
                 gq3 = grav[5,0]
 
-                u1 = 2*gq1 #+ v1
+                u1 = 2*gq1 + v1
                 u2 = 2*gq2 #+ v2
-                u3 = 2*gq3 + v3
+                u3 = 2*gq3 #+ v3
                 # print('u1',u1)
                 self.base_command.actuators[1].torque_joint = u1
                 # Grav comp is sent to fourth actuator
@@ -454,8 +454,7 @@ class TorqueExample:
                 controlHist_temp[:,[counter]] = jnp.array([[u1],[u2],[u3]])
 
                 q_storage_temp[:,[counter]] = q
-                vel_storage_temp[:,[counter]] = jnp.array([
-                               [q1dot],
+                vel_storage_temp[:,[counter]] = jnp.array([[q1dot],
                                [q2dot],
                                [q3dot],
                                ])
@@ -530,7 +529,7 @@ class TorqueExample:
         details = ['Saved Data from Physical Implementation! This file has double grav comp so the robot arm swings to a vertical position']
         values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
         header = ['Time', 'State History']
-        with open('/root/FYP/Kinova/examples/108-Gen3_torque_control/data/sinusoid_inverted_v3', 'w', newline='') as f:
+        with open('/root/FYP/Kinova/examples/108-Gen3_torque_control/data/freeswing_v1sin_3', 'w', newline='') as f:
 
             writer = csv.writer(f)
             # writer.writerow(simtype)
@@ -548,7 +547,7 @@ class TorqueExample:
                 q5 = self.q_storage[4,i]
                 q6 = self.q_storage[5,i]
                 q7 = self.q_storage[6,i]
-                qdot1 = self.vel_storage[0,i]               #momentum (transformed)
+                qdot1 = self.vel_storage[0,i]               #FOR MOMENTUM LATER
                 qdot2 = self.vel_storage[1,i]
                 qdot3 = self.vel_storage[2,i]
                 v1 = self.controlHist[0,i]       #control values
@@ -603,7 +602,7 @@ def main():
 
             example = TorqueExample(router, router_real_time)
             args.cyclic_time = 0.005
-            # args.duration = 20
+            args.duration = 20
             example.InitStorage(args.cyclic_time, args.duration)
             success = example.InitCyclic(args.cyclic_time, args.duration, args.print_stats)
 
