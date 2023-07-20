@@ -877,7 +877,7 @@ v = jnp.zeros((3,1))
 #Define Friction
 # D = jnp.zeros((3,3))
 D = 1.*jnp.eye(n)          #check this imple
-D_obs = jnp.array([5.0465087890625,5.0465087890625,5.079345703125])@jnp.eye(n)
+# D_obs = jnp.array([5.0465087890625,5.0465087890625,5.079345703125])@jnp.eye(n)
                         #^ as determined from optimisation
 endT = T - dt       #prevent truncaton
 t = jnp.arange(0,T,dt)
@@ -1062,7 +1062,7 @@ for k in range(l):
             
             # p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
             x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
-            err = jnp.block([[q], [p]]) - x_d     #define error
+            err = jnp.block([[q], [p_d]]) - x_d     #define error           now running off phat
             #Find Control Input for current x, xtilde
             v_input = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
             # v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
@@ -1106,7 +1106,7 @@ for k in range(l):
 
         Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
         # print('Time Elapsed', timeObs)
-        obs_args = (phat,phi,v,D_obs,constants)
+        obs_args = (phat,phi,v,D,constants)
                 # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
         xp_update = rk4(x_obs,ode_observer_wrapper,dt_obs,*obs_args)          #call rk4 solver to update ode
         # print('xp_update', xp_update)
@@ -1179,7 +1179,7 @@ print(controlHist)
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
 controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/demo_point1', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/demo_point1_realp', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

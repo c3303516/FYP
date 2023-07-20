@@ -125,9 +125,9 @@ def massMatrix_continuous(q_hat,qconstants):
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
     q4 = q_bold.at[4].get()
-    q2 = q_bold.at[5].get()
+    q6 = q_bold.at[5].get()
 
-    q6 = q_hat.at[0].get()
+    q2 = q_hat.at[0].get()
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
     # print('q1',q1)
@@ -345,11 +345,11 @@ def MqPrime(q_hat,constants):
     Mq = massMatrix_continuous(q_hat,constants)
     holo = jnp.array([
         [0.],
-        [0.],
-        [0.],
-        [0.],
-        [0.],
         [1.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
         [0.],
     ])
     
@@ -406,11 +406,6 @@ def unravel(dMdq_temp):         #This rearranges the square matrix that gets inp
 
     return dMdq1#, dMdq2, dMdq3 
 
-# @partial(jax.jit, static_argnames=['Ti'])
-@jax.jit
-def dTi(Ti,dM):
-    dTi = solve_continuous_lyapunov(Ti,dM)
-    return dTi
 
 
 @jax.jit
@@ -431,9 +426,9 @@ def Vq(q_hat, qconstants):
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
     q4 = q_bold.at[4].get()
-    q2 = q_bold.at[5].get()
+    q6 = q_bold.at[5].get()
 
-    q6 = q_hat.at[0].get()
+    q2 = q_hat.at[0].get()
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
 
@@ -525,98 +520,8 @@ def holonomicConstraint(q_hat, qconstants):
     q_bold = q_bold.at[0].get()         #remove the extra array
     return q_bold
 
-############################# TRACKING PROBLEM ###################################
-
-@partial(jax.jit, static_argnames=['struct'])
-def errorIKM(q, q_last, xestar,struct):
-
-    #q0 is start point. q is iteration to solve for xstar
-    #xstar is currently just positon, no angles
-    #EFFECTOR IKM
-    q2 = q[0]      #make the full q vector
-    q4 = q[1]
-    q6 = q[2]
-    # print('struct',struct)
-    q = jnp.array([     #this is qhat
-        [q2, q4, q6]
-        ])
-
-    q = jnp.transpose(q)
-    qconstants = struct.constants
-    q_bold = qconstants.at[:,0].get()     #constrained variabless
-    # print('constants',q_bold)
-    
-    q1 = q_bold.at[0].get()
-    q3 = q_bold.at[1].get()
-    q5 = q_bold.at[2].get()
-    q7 = q_bold.at[3].get()
-
-    A01 = tranz(struct.l1)@rotx(pi)@rotz(q1)          
-    A12 = rotx(pi/2)@tranz(-struct.d1)@trany(-struct.l2)@rotz(q2)
-    A23 = rotx(-pi/2)@trany(struct.d2)@tranz(-struct.l3)@rotz(q3)
-    A34 = rotx(pi/2)@tranz(-struct.d2)@trany(-struct.l4)@rotz(q4)
-    A45 = rotx(-pi/2)@trany(struct.d2)@tranz(-struct.l5)@rotz(q5)
-    A56 = rotx(pi/2)@trany(-struct.l6)@rotz(q6)
-    A67 = rotx(-pi/2)@tranz(-struct.l7)@rotz(q7)
-    A7E = rotx(pi)@tranz(struct.l8)    
-    AEG = tranz(struct.lGripper)
-
-    A02 = A01@A12
-    A03 = A02@A23
-    A04 = A03@A34
-    A05 = A04@A45
-    A06 = A05@A56
-    A07 = A06@A67
-    A0E = A07@A7E
-    #end effector pose
-    r0E0 = A0E[0:3,[3]]
-
-    pose_weights = jnp.array([1.,1.])
-    sqK = 1000*jnp.diag(pose_weights)                            #weights on x and z error
-    e_pose = jnp.array([r0E0[0]-xestar[0] ,r0E0[2]-xestar[2]] )  #penalised error from xe to xestar
-
-    e_q = q - q_last            #penalises movement from q0
-    q_weights = jnp.array([1.,1.,1.])              #penalises specific joint movement. Currently set to use base joint more
-    sqW = 1*jnp.diag(q_weights)
-
-    sqM = jnp.block([
-        [sqW,               jnp.zeros((3, 2))],
-        [jnp.zeros((2,3)),  sqK              ]
-    ])
-#     s = effectorAnalyticalJacobian(q, param, s);      #this is here for future reference if I want to fix angles
-#     JA = s.JA;
-#     J = [sqW;
-#          sqK*JA];
-
-    e = sqM@jnp.block([[e_q],[e_pose]])
-                       #coudl use jacobian and feed through. might decrease time
-    # print(e)
-    e = e[:,0]           
-    return e
 
 
-def solveIKM(traj,init_guess,params):
-    #solves for displacement only
-    guess = init_guess
-    # print(jnp.shape(guess))
-    m,n = jnp.shape(traj)
-    # print('m,n', m,n)
-    q_d = jnp.zeros((m,n))
-
-    bound = ([s.qlower.at[1].get(),s.qlower.at[3].get(),s.qlower.at[5].get()],[s.qupper.at[1].get(),s.qupper.at[3].get(),s.qupper.at[5].get()])
-
-
-    for i in range(n):
-        point = traj.at[0:3,i].get()
-        # errorIKM(q, q0, xestar,struct):       #function handle for ref
-        q0 = jnp.transpose(jnp.array([guess]))
-        # print(jnp.shape(q0))
-        result = least_squares(errorIKM,guess,bounds=bound,args=(q0,point,s))        #starts guess at guess, and penalised movement from last q_d point
-        guess = result.x
-        q_d = q_d.at[:,i].set(guess)
-        # print(q_d.at[:,i].get())
-
-    return q_d
 
 
 def diff_finite(q_d,t_span):
@@ -679,119 +584,7 @@ def control(x_err,Tq,Cq,Kp,Kd,alpha,gravComp):
     return v
 
 
-################################# OBSERVER #######################################
 
-def C_SYS(p_sym,p_sym2,Tq,dTqinvdq_val):
-    #This function is specifically used in the creation of \bar{C}
-    dTqinvdq1 = dTqinvdq_val.at[0].get()
-    dTqinvdq2 = dTqinvdq_val.at[1].get()
-    dTqinvdq3 = dTqinvdq_val.at[2].get()
-    # print('dTqinvdq1',dTqinvdq1)
-    dTqinv_phatdq1 = dTqinvdq1@p_sym
-    dTqinv_phatdq2 = dTqinvdq2@p_sym
-    dTqinv_phatdq3 = dTqinvdq3@p_sym
-    # print('dTqinv',jnp.shape(dTqinv_phatdq1))
-    temphat = jnp.block([dTqinv_phatdq1, dTqinv_phatdq2, dTqinv_phatdq3])
-    temphatT = jnp.transpose(temphat)
-    # print('temp',temp)
-    Ctemp = temphatT - temphat
-    # print('shape Ctemp', jnp.shape(Ctemp))
-    # print('Ctemp',Ctemp)
-    Cq_phat = Tq@Ctemp@Tq
-    # print('shape Cqphat', jnp.shape(Cq_phat))
-
-    # print(jnp.shape(Cq_phat@p_sym2))
-    return Cq_phat@p_sym2
-
-@jax.jit
-def Cqp(p,Tq,dTqinvdq_val):
-    #Calculation of the Coriolis Damping matrix (Check if this is correct name)
-    dTqinvdq1 = dTqinvdq_val.at[0].get()
-    dTqinvdq2 = dTqinvdq_val.at[1].get()
-    dTqinvdq3 = dTqinvdq_val.at[2].get()
-    # print('p',p)
-    dTqinv_phatdq1 = dTqinvdq1@p
-    dTqinv_phatdq2 = dTqinvdq2@p
-    dTqinv_phatdq3 = dTqinvdq3@p
-    # print('dTqinv',dTqinv_phatdq1)
-    temphat = jnp.block([dTqinv_phatdq1, dTqinv_phatdq2, dTqinv_phatdq3])
-    temphatT = jnp.transpose(temphat)
-    # print('temp',temp)
-    Ctemp = temphatT - temphat
-    # print(Ctemp)
-    Cq = Tq@Ctemp@Tq
-
-    return Cq
-
-@jax.jit
-def observer_dynamics(xp,q,phi,u,Cq_phat,D,dVq,Tq):
-    Dq = Tq@D@Tq
-    # CbSYM(jnp.array([[0.],[0.],[0.]]),phat,Tq,dTqinvdq_values)
-    Gq = Tq #previous result - confirm this
-    u0 = jnp.zeros((3,1))
-    # xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u+u0)
-    #these dynamics substitue phat = xp + phi*q for better performance with RK4 solve
-    # print('ObsdVq',dVq)
-    xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + u      #Gq@(u+u0) = u as control law isn't multiplied by Gq^-1
-    return  xp_dot
-
-#This function allows the observer dynamics to be integrated with the RK4 function. Everything as a function of q
-
-#Try and implement this again. Joel has everything as a function of q and ph, which is what is needed.
-def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
-    qo = jnp.array([[xo.at[0,0].get()],   #unpack states
-                   [xo.at[1,0].get()],
-                   [xo.at[2,0].get()]])
-    xpo = jnp.array([[xo.at[3,0].get()],
-                    [xo.at[4,0].get()],
-                    [xo.at[5,0].get()]])
-    # xp = phat - phi*q  -- extract q from this with a constant phat?
-
-    Mqo, Tqo, Tqinvo, Jco = massMatrix_holonomic(qo,s) 
-    dMdqo = massMatrixJac(qo,consto)
-    dMdq1o, dMdq2o, dMdq3o = unravel(dMdqo)
-
-    dTqidq1o = solve_continuous_lyapunov(Tqinvo,dMdq1o)
-    dTqidq2o = solve_continuous_lyapunov(Tqinvo,dMdq2o)
-    dTqidq3o = solve_continuous_lyapunov(Tqinvo,dMdq3o)
-
-    dTqinvo = jnp.array([dTqidq1o,dTqidq2o,dTqidq3o])
-    # dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
-    dVdqo = dV_func(qo,consto)
-
-    # print('dVdqo',dVdqo)
-    phato_dynamic = xpo+phio*qo
-    Cqo = Cqp(phato_dynamic,Tqo,dTqinvo)
-    # print('v', cntrl)
-
-    # print('qo',qo)
-
-    dxp = observer_dynamics(xpo,qo,phio,cntrl,Cqo,dampo,dVdqo,Tqo)
-    # print('dxp',dxp)
-    xpo_dot = jnp.block([[jnp.zeros((3,1))],[dxp]])
-    # print('xpodot', xpo_dot)
-    return xpo_dot
-
-
-#rewrite to bring switch out of switch condtition
-def switchCond(phat,kappa,phi,Tq,dTqinvdq_values):
-    # m,n = jnp.shape(Tq)
-    # print('phat',phat)
-    Cbar_large = CbSYM(jnp.zeros((3,1)),phat,Tq,dTqinvdq_values)  
-    #process Cbar to the correct size, shape and order. Removes the columns, and transpose reorders columns back to how they should be with jac function
-    # print(jnp.transpose(Cbar_large.at[:,0,:,0].get()))
-    # print('SHape Cbar', jnp.shape(Cbar))
-    # Cbar = jnp.transpose(Cbar_large.at[:,0,:,0].get())        #transpose is not needed according to comparison to joels matlab code
-    Cbar = Cbar_large.at[:,0,:,0].get()
-    min = jnp.amin(jnp.real(linalg.eigvals(phi*Tq - 0.5*(Cbar + jnp.transpose(Cbar)))))-kappa
-    return min
-
-def observerSwitch(q,phi,xp,kappa):
-    phinew = phi + kappa
-    xpnew = xp - kappa*q
-    print('Switch Occurred')
-
-    return phinew,xpnew
 
 ######################################## MAIN CODE STARTS HERE #################################
 ######################################## MAIN CODE STARTS HERE #################################
@@ -836,7 +629,9 @@ controlHist = jnp.transpose(controlHistT)
 # print(jnp.shape(controlHist))
 
 qHist = q7Hist[[1],:]         #this will only be the actuator we care about.        ############# CHANGE THIS
-velHist = vel3Hist[[1],:]
+velHist = vel3Hist[[0],:]     # vel is 3
+
+print('size qhist', jnp.shape(qHist))
 
 q_0 = qHist[:,[0]]
 print('q0',q_0)
@@ -858,11 +653,11 @@ s.constants = constants         #for holonomic transform
 
 holonomicTransform = jnp.array([
         [0.],
-        [0.],         #only actuator we car about? might have to reduce the rows. write this out.
+        [1.],         #only actuator we car about? might have to reduce the rows. write this out.
         [0.],
         [0.],
         [0.],
-        [1.],
+        [0.],
         [0.],
     ])
 
@@ -880,8 +675,6 @@ dMdq1= unravel(dMdq_print)
 # V = Vq(q_hat,constants)
 # print('V', V)
 dV_func = jacfwd(Vq,argnums=0)
-#compute \barC matrix
-CbSYM = jacfwd(C_SYS,argnums=0)
 
 # print(fake)
 
@@ -907,10 +700,8 @@ pHist = jnp.zeros((n,l))            #this is for momentum from real data
 ### Process real data for momentum states. #####
 
 for k in range(l):
-    x = qHist.at[:,[k]].get()
-    q = jnp.array([[x.at[0,0].get()],
-                   [x.at[1,0].get()],
-                   [x.at[2,0].get()]])
+    # x = qHist.at[:,[k]].get()
+    q = jnp.array([qHist.at[:,[k]].get()])
 
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
     vel = velHist.at[:,[k]].get()
@@ -970,7 +761,7 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
         dt_instant = dt.at[:,k].get()
         print('dt',dt_instant)
 
-        v = controlHist.at[[2],[k]].get()     #extract control applied to the robot
+        v = controlHist.at[[0],[k]].get()     #extract control applied to the robot
         # print('shape v',jnp.shape(v))
         x = x_sim.at[:,[k]].get()
         # q = jnp.array([[x.at[0,0].get()],
