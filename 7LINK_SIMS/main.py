@@ -788,7 +788,7 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = pi/2.
+q0_1 = 0.
 q0_2 = 0.
 q0_3 = 0.
 
@@ -833,10 +833,10 @@ dMdq_print = massMatrixJac(q_0,constants)
 
 
 dMdq1, dMdq2, dMdq3 = unravel(dMdq_print)
-print('dMdq', dMdq1)
-print('dMdq', dMdq2)
-print('dMdq', dMdq3)
-print('size', jnp.shape(dMdq_print))
+# print('dMdq', dMdq1)
+# print('dMdq', dMdq2)
+# print('dMdq', dMdq3)
+# print('size', jnp.shape(dMdq_print))
 
 # print(fake)
 # V = Vq(q_hat,constants)
@@ -895,23 +895,6 @@ timeObsUpdate = 0.           #last time observer updated
 dt_obs = 1/ObsRate
 print('Observer dt',dt_obs)
 Hobs = 0.
-
-# Testing
-# TqiJac = jacfwd(TqiPrime)
-# dTidq_test = TqiJac(q_0,constants)        #this doesn't apprea to work as sqrtm mght not have a jax tracer
-# dTidq1,dTidq2,dTidq3 = unravel(dTidq_test)
-# dTqinv_test = jnp.array([dTidq1,dTidq2,dTidq3])
-
-
-
-
-# ### TESTING CBAR CONSTRUCTION IN DIFFERENT WAY
-
-# def Tq_phat(q,p_sym,Tq):          #this needs to be derived wrt q.
-#     result = Tq@p_sym
-#     return result
-
-# Tq_jac = jacfwd(Tq_phat, argnums=0)
 
 
 ##################### TRACKING PROBLEM PARAMETERS
@@ -1022,7 +1005,7 @@ for k in range(l):
     # print(dVdq)
 
     Cqph = Cqp(phat,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
-    Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
+    Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,p) Matrix.
 
     Dhat = Tq@D@Tq
 
@@ -1043,7 +1026,7 @@ for k in range(l):
     # print('Phat Switch', phat - phat_plus)        #check that the switch doesn't affect phat - it doesn't
 
     ptilde = phat - p       #observer error for k timestep
-    print('p~',ptilde)
+    # print('p~',ptilde)
 
     if controlActive == 1:
         timeCon = round((time - timeConUpdate),3)
@@ -1054,7 +1037,6 @@ for k in range(l):
             else:
                 tau = jnp.zeros((3,1))
 
-
             print('Controller Updating')
             qddot = dq_d.at[:,[k]].get()  
             qddotdot = ddq_d.at[:,[k]].get()  
@@ -1062,7 +1044,8 @@ for k in range(l):
             
             # p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
             x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
-            err = jnp.block([[q], [p_d]]) - x_d     #define error           now running off phat
+            # err = jnp.block([[q], [phat]]) - x_d     #define error           now running off phat. THis was p_d before to act only on position error.
+            err = jnp.block([[q], [p_d]]) - x_d     #define error           now running off phat. THis was p_d before to act only on position error.
             #Find Control Input for current x, xtilde
             v_input = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
             # v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
@@ -1076,19 +1059,12 @@ for k in range(l):
             dp_d_dq = jnp.block([dTiqdot_dq1,dTiqdot_dq2,dTiqdot_dq3])      #this is from product rule
 
 
-            v = -(Cqph - Dhat)@p_d + dp_d_dq@Tq@p + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
+            v = -(Cqph - Dhat)@p_d + dp_d_dq@Tq@phat + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
             # print('v',v)
 
     else:
         v = jnp.zeros((3,1))
 
-
-    # if gravComp == 1:           #tTHIS IS THE OLD LOCATION. NOW IN CONTROLLER UPDATE AS BEFITS REAL SYSTEM
-    #     tau = Tq@dVdq           #tranform into momentum trnasform dynamics
-    # else:
-    #     tau = jnp.zeros((3,1))
-    # v = (tau + v_control)      #Equation 21 in the paper. Not multiplied by G^-1 as that gets cancelled with Tq multiplication in dynamics
-      # print('v',v)  
 
     #OBSERVER ODE SOLVE 
     timeObs = round((time - timeObsUpdate),3)      #dealing with this float time issue
@@ -1176,15 +1152,21 @@ print(controlHist)
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
-details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps,' Obs/Cont Rates', ObsRate,ContRate]
-controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha, 'kappa',kappa]
+details = ['Simulations to compare control when given real or estimated momentum. This is ESTIMATED, controller acts on position ONLY']
+simInfo = ['dT', dt, 'Substep Number', substeps]
+controlInfo = ['Control',controlActive,'Grav Comp', gravComp,'Control Rate',ContRate,'Kp',Kp,'Kd',Kd,'alpha',alpha]
+observerInfo = ['Observer Rate', ObsRate, 'Kappa',kappa]
+trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/demo_point1_realp', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/comparison_sims_estimatedP_poserror', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
     writer.writerow(details)
-    writer.writerow(controlConstants)
+    writer.writerow(simInfo)
+    writer.writerow(controlInfo)
+    writer.writerow(observerInfo)
+    writer.writerow(trackingInfo)
     writer.writerow(header)
 
     # writer.writerow(['Time', t])
