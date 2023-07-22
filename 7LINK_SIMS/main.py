@@ -866,7 +866,7 @@ controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
 alpha = 0.1
-Kp = 50.*jnp.eye(n)
+Kp = 20.*jnp.eye(n)
 Kd = 1.*jnp.eye(n)
 ContRate = 200. #Hz: Controller refresh rate
 dt_con = 1/ContRate
@@ -1045,10 +1045,10 @@ for k in range(l):
             # p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
             x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
             # err = jnp.block([[q], [phat]]) - x_d     #define error           now running off phat. THis was p_d before to act only on position error.
-            err = jnp.block([[q], [p_d]]) - x_d     #define error           now running off phat. THis was p_d before to act only on position error.
+            err = jnp.block([[q], [p]]) - x_d     #define error           now running off phat. THis was p_d before to act only on position error.
             #Find Control Input for current x, xtilde
-            v_input = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
-            # v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
+            # v_input = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
+            v_input = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
             timeConUpdate = time
 
 
@@ -1059,7 +1059,7 @@ for k in range(l):
             dp_d_dq = jnp.block([dTiqdot_dq1,dTiqdot_dq2,dTiqdot_dq3])      #this is from product rule
 
 
-            v = -(Cqph - Dhat)@p_d + dp_d_dq@Tq@phat + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
+            v = -(Cqp_real - Dhat)@p_d + dp_d_dq@Tq@p + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
             # print('v',v)
 
     else:
@@ -1152,13 +1152,13 @@ print(controlHist)
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
-details = ['Simulations to compare control when given real or estimated momentum. This is ESTIMATED, controller acts on position ONLY']
+details = ['Simulations to compare control when given real or estimated momentum. This is REAL']
 simInfo = ['dT', dt, 'Substep Number', substeps]
 controlInfo = ['Control',controlActive,'Grav Comp', gravComp,'Control Rate',ContRate,'Kp',Kp,'Kd',Kd,'alpha',alpha]
 observerInfo = ['Observer Rate', ObsRate, 'Kappa',kappa]
 trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/comparison_sims_estimatedP_poserror', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/comparison_sims_realP_2', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
