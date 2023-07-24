@@ -581,7 +581,7 @@ def errorIKM(q, q_last, xestar,struct):
 #     J = [sqW;
 #          sqK*JA];
 
-    e = sqM@jnp.block([[e_q],[e_pose]])
+    e = sqM@jnp.block([[e_q],[e_pose]])         # this isn't quadratic?? FUCK
                        #coudl use jacobian and feed through. might decrease time
     # print(e)
     e = e[:,0]           

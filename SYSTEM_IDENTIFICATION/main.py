@@ -745,6 +745,7 @@ controlHist_sim = jnp.zeros((n,l))
 print('SIMULATION LOOP STARTED')
 
 jnp.set_printoptions(precision=15)
+substeps = 2
 
 
 ## RUNNIN SIM
@@ -754,10 +755,10 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
     (m,hold) = jnp.shape(x_init)
     # print(jnp.shape(x_init))
     x_sim = jnp.zeros((m,l+1))
-    print('size xsim',jnp.shape(x_sim))
+    # print('size xsim',jnp.shape(x_sim))
     x_sim = x_sim.at[:,[0]].set(x_init)
     for k in range(l):
-        time = t.at[:,k].get()
+        # time = t.at[:,k].get()
         dt_instant = dt.at[:,k].get()
         print('dt',dt_instant)
 
@@ -791,9 +792,13 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
         #SYSTEM ODE SOLVE
         print('System Updating')
         args = (v,D,constants)
-        # for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
+        dt_integration = dt_instant/substeps
+        x_next = x
+        for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
         # print('dt',jnp.shape(dt_instant))
-        x_step= rk4(x,ode_dynamics_wrapper,dt_instant,*args)        #constraints need to be made for this.
+            # print('i',i)
+            x_step= rk4(x_next,ode_dynamics_wrapper,dt_integration,*args)        #constraints need to be made for this.
+            x_next = x_step
 
         x_k = x_step          #extract final values from ODE solve
         # print('size xk',jnp.shape(x_k))
@@ -814,7 +819,7 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
 def optimisationCost(dampP,X,simFunc,xstart,controlHist,t,dt):
     
     m,n = jnp.shape(X)
-    print('size x',jnp.shape(X))
+    # print('size x',jnp.shape(X))
     simX = simFunc(xstart,controlHist,t,dt,dampP)
     # print(jnp.shape(X[[0],:]))
     # print(jnp.shape(simX[[0],0:n]))
@@ -850,7 +855,7 @@ print('Saving Data')
 details = ['Damping Parameter:', dampingParamOpt]
 # values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
 # header = ['Time', 'State History']
-with open('SYSTEM_IDENTIFICATION/data/dampingParameter3', 'w', newline='') as f:
+with open('SYSTEM_IDENTIFICATION/data/dampingParameter1', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
