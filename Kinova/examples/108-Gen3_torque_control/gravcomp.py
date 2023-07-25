@@ -2,9 +2,13 @@ import numpy as jnp
 from numpy import pi, sin, cos, linalg
 from params import *
 from homogeneousTransforms import *
+import jax
+from jax.config import config
+config.update("jax_enable_x64", True)
 
 
 # @partial(jax.jit, static_argnames=['s'])
+# @jax.jit
 def gq(q0):
     q2 = q0[1]      #pass the joint variable to the specific joints 
     q4 = q0[3]
@@ -16,18 +20,17 @@ def gq(q0):
     q7 = q0[6]
 
 
-    l1 = 156.4e-3
-    l2 = 128.4e-3
-    l3 = 210.4e-3
-    l4 = 210.4e-3
-    l5 = 208.4e-3
-    l6 = 105.9e-3
-    l7 = 105.9e-3
-    l8 = 61.5e-3
+    # l1 = 156.4e-3
+    # l2 = 128.4e-3
+    # l3 = 210.4e-3
+    # l4 = 210.4e-3
+    # l5 = 208.4e-3
+    # l6 = 105.9e-3
+    # l7 = 105.9e-3
+    # l8 = 61.5e-3
 
-    d1 = 5.4e-3
-    d2 = 6.4e-3
-
+    # d1 = 5.4e-3
+    # d2 = 6.4e-3
 
 
     g = 9.81
@@ -39,52 +42,7 @@ def gq(q0):
     m6 = 0.678
     m7 = 0.678
     m8 = 0.5
-
-    # I1 = jnp.array([[0.4622e-2, 0.0009e-2,0.006e-2],  #base
-    #             [0.0009e-2, 0.4495e-2, 0.0009e-2],
-    #             [0.006e-2, 0.0009e-2,0.2079e-2]])
-
-    # I2 = jnp.array([[0.457e-2, 0.0001e-2,0.0002e-2],
-    #             [0.0001e-2, 0.4831e-2, 0.0448e-2],
-    #             [0.0002e-2, 0.0448e-2,0.1409e-2]])
-
-    # I3 = jnp.array([[1.1088e-2, 0.0005e-2,0],
-    #             [0.0005e-2, 0.1072e-2, -0.0691e-2],
-    #             [0, -0.0691e-2,1.1255e-2]])
-
-    # I4 = jnp.array([[1.0932e-2, 0,-0.0007e-2],
-    #             [0, 1.1127e-2, 0.0606e-2],
-    #             [-0.0007e-2, 0.0606e-2,0.1043e-2]])
-
-    # I5 = jnp.array([[0.8147e-2, -0.0001e-2,0,],
-    #             [-0.0001e-2, 0.0631e-2, -0.05e-2],
-    #             [0, -0.05e-2,0.8316e-2]])
-
-    # I6 = jnp.array([[0.1596e-2, 0, 0],
-    #             [0, 0.1607e-2, 0.0256e-2],
-    #             [0, 0.0256e-2,0.0399e-2]])
-
-    # I7 = jnp.array([[0.1641e-2, 0,0],
-    #             [0, 0.0410e-2, -0.0278e-2],
-    #             [0, -0.0278e-2,0.1641e-2]])
-
-    # I8 = jnp.array([[0.0587e-2, 0.0003e-2,0.0003e-2],
-    #             [0.0003e-2, 0.0369e-2, 0.0118e-2],
-    #             [0.0003e-2, 0.0118e-2,0.0609e-2]])
-    
-
-    ## Effector FKM
-    # A01old = tranz(l1)@rotx(pi)@rotz(q1)          
-    # A12old = rotx(pi/2)@tranz(-d1)@trany(-l2)@rotz(q2)
-    # A23old = rotx(-pi/2)@trany(d2)@tranz(-l3)@rotz(q3)
-    # A34old = rotx(pi/2)@tranz(-d2)@trany(-l4)@rotz(q4)
-    # A45old = rotx(-pi/2)@trany(d2)@tranz(-l5)@rotz(q5)
-    # A56old = rotx(pi/2)@trany(-l6)@rotz(q6)
-    # A67old = rotx(-pi/2)@tranz(-l7)@rotz(q7)
-    # A7Eold = rotx(pi)@tranz(l8)    
-    # AEG = tranz(lGripper)
-
-
+ 
     A01 = jnp.array([[1., 0., 0., 0.],
                      [0.,-1., 0., 0.],
                      [0., 0.,-1., 0.1564],
@@ -204,7 +162,6 @@ def gq(q0):
     R56 = A56[0:3,0:3]
     R67 = A67[0:3,0:3]
     R7E = A7E[0:3,0:3]
-    # REG = AEG[0:3,0:3]
 
     r100   = A01[0:3,[3]]
     r200   = A02[0:3,[3]]
@@ -213,11 +170,6 @@ def gq(q0):
     r500   = A05[0:3,[3]]
     r600   = A06[0:3,[3]]
     r700   = A07[0:3,[3]]
-    # r800   = A0E[0:3,[3]]
-    # rG00   = A0G[0:3,[3]]
-
-
-    # rc100   = A0c1[0:3,[3]]
     rc200   = A0c2[0:3,[3]]
     rc300   = A0c3[0:3,[3]]
     rc400   = A0c4[0:3,[3]]
@@ -225,7 +177,6 @@ def gq(q0):
     rc600   = A0c6[0:3,[3]]
     rc700   = A0c7[0:3,[3]]
     rc800   = A0c8[0:3,[3]]
-    # rcG00   = A0cG[0:3,[3]]
 
     z00 = jnp.array([[0.], [0.], [1.]])
     z01 = R01@z00
@@ -235,8 +186,7 @@ def gq(q0):
     z05 = R01@R12@R23@R34@R45@z00
     z06 = R01@R12@R23@R34@R45@R56@z00
     z07 = R01@R12@R23@R34@R45@R56@R67@z00
-    z08 = R01@R12@R23@R34@R45@R56@R67@R7E@z00
-    # z0G = R01@R12@R23@R34@R45@R56@R67@R7E@REG@z00
+    # z08 = R01@R12@R23@R34@R45@R56@R67@R7E@z00
 
     ske1 = skew(z01)
     ske2 = skew(z02)
@@ -245,9 +195,6 @@ def gq(q0):
     ske5 = skew(z05)
     ske6 = skew(z06)
     ske7 = skew(z07)
-    # ske8 = skew(z08)
-    # skeG = skew(z0G)
-
 
     Jc2   = jnp.block([
         [ske1@(rc200-r100),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))],   #jnp.zeros((3,1))],
@@ -278,58 +225,6 @@ def gq(q0):
         [z01,                z02,                z03              ,  z04,                z05,                z06,                z07              ]  #,   jnp.zeros((3,1))]
         ])
 
-    # # Mass Matrix
-    # R02 = A02[0:3,0:3]
-    # R03 = A03[0:3,0:3]
-    # R04 = A04[0:3,0:3]
-    # R05 = A05[0:3,0:3]
-    # R06 = A06[0:3,0:3]
-    # R07 = A07[0:3,0:3]
-    # R08 = A0E[0:3,0:3]
-    # R0G = A0G[0:3,0:3]
-
-
-    # M2 = Jc2.T@jnp.block([
-    #     [jnp.multiply(m2,jnp.eye(3,3)), jnp.zeros((3,3))],
-    #     [jnp.zeros((3,3)),            R02.T@I2@R02 ]
-    # ])@Jc2
-    # M3 = Jc3.T@jnp.block([
-    #     [jnp.multiply(m3,jnp.eye(3,3)), jnp.zeros((3,3))],
-    #     [jnp.zeros((3,3)),            R03.T@I3@R03 ]
-    # ])@Jc3
-    # M4 = Jc4.T@jnp.block([
-    #     [jnp.multiply(m4,jnp.eye(3,3)), jnp.zeros((3,3))],
-    #     [jnp.zeros((3,3)),            R04.T@I4@R04 ]
-    # ])@Jc4
-    # M5 = Jc5.T@jnp.block([
-    #     [jnp.multiply(m5,jnp.eye(3,3)), jnp.zeros((3,3))],
-    #     [jnp.zeros((3,3)),            R05.T@I5@R05 ]
-    # ])@Jc5
-    # M6 = Jc6.T@jnp.block([
-    #     [jnp.multiply(m6,jnp.eye(3,3)), jnp.zeros((3,3))],
-    #     [jnp.zeros((3,3)),            R06.T@I6@R06 ]
-    # ])@Jc6
-    # M7 = Jc7.T@jnp.block([
-    #     [jnp.multiply(m7,jnp.eye(3,3)), jnp.zeros((3,3))],
-    #     [jnp.zeros((3,3)),            R07.T@I7@R07 ]
-    # ])@Jc7
-    # M8 = Jc8.T@jnp.block([
-    #     [jnp.multiply(m8,jnp.eye(3,3)), jnp.zeros((3,3))],
-    #     [jnp.zeros((3,3)),            R08.T@I8@R08 ]
-    # ])@Jc8
-
-    # Mq7 = M2 + M3 + M4 + M5 + M6 + M7 + M8
-
-    #holonomic contraints
-    # holonomicTransform = jnp.array([
-    #     [0.,0.,0.],
-    #     [1.,0.,0.],
-    #     [0.,0.,0.],
-    #     [0.,1.,0.],
-    #     [0.,0.,0.],
-    #     [0.,0.,1.],
-    #     [0.,0.,0.],
-    # ])
 
     g0 = jnp.array([[0],[0],[-g]])
     tauc2 = jnp.block([[m2*g0],[jnp.zeros((3,1))]])
@@ -339,11 +234,13 @@ def gq(q0):
     tauc6 = jnp.block([[m6*g0],[jnp.zeros((3,1))]])
     tauc7 = jnp.block([[m7*g0],[jnp.zeros((3,1))]])
     tauc8 = jnp.block([[m8*g0],[jnp.zeros((3,1))]])
-    gq      = -jnp.transpose(( + jnp.transpose(tauc2)@Jc2 + jnp.transpose(tauc3)@Jc3 + jnp.transpose(tauc4)@Jc4 + jnp.transpose(tauc5)@Jc5 + jnp.transpose(tauc6)@Jc6 + jnp.transpose(tauc7)@Jc7 + jnp.transpose(tauc8)@Jc8))
+    grav      = -jnp.transpose(( + jnp.transpose(tauc2)@Jc2 + jnp.transpose(tauc3)@Jc3 + jnp.transpose(tauc4)@Jc4 + jnp.transpose(tauc5)@Jc5 + jnp.transpose(tauc6)@Jc6 + jnp.transpose(tauc7)@Jc7 + jnp.transpose(tauc8)@Jc8))
 
 
     # Mq = jnp.transpose(holonomicTransform)@Mq7@holonomicTransform  #transform needed to produce Mq_hat
-
-    return gq
+    gq1 = grav[1,0]
+    gq2 = grav[3,0]
+    gq3 = grav[5,0]
+    return gq1, gq2, gq3
 
     

@@ -61,12 +61,100 @@ import threading
 
 #import custom scripts
 from sinusoid import sinusoid, sinusoid_instant
-import numpy as jnp
+import jax.numpy as jnp
 from params import robotParams
 from numpy import pi,sin,cos,linalg
 from gravcomp import gq
 import csv
+import jax
+from jax import grad, jacobian, jacfwd
 
+from functools import partial
+from jax.config import config
+config.update("jax_enable_x64", True)
+
+################ HOMOGENEOUS TRANSFORMS ###############################
+
+def skew(u):
+    ans = jnp.block([[0., -u[2], u[1]],
+                    [u[2], 0., -u[0]],
+                    [-u[1], u[0], 0.]])
+    return ans
+
+def hatSE3(x):
+    A = skew(x[3:5])
+    return A
+
+
+def rotx(mu):
+    A = jnp.block([[1., 0., 0., 0.],
+                   [0., jnp.cos(mu), -jnp.sin(mu), 0.],
+                   [0., jnp.sin(mu), jnp.cos(mu), 0.],
+                   [0., 0., 0., 1.]])
+    return A
+
+def roty(mu):
+    A = jnp.block([[jnp.cos(mu), 0., jnp.sin(mu), 0.],
+                   [0., 1., 0., 0.],
+                   [-jnp.sin(mu), 0., jnp.cos(mu), 0.],
+                   [0., 0., 0., 1.]])
+    return A
+
+def rotz(mu):
+    A = jnp.block([[jnp.cos(mu), -jnp.sin(mu), 0., 0.],
+                   [jnp.sin(mu), jnp.cos(mu), 0., 0.],
+                   [0., 0., 1., 0.],
+                   [0., 0., 0., 1.]])
+
+    return A
+
+def rotx_small(mu):
+    A = jnp.block([[1., 0., 0.],
+                [0., mu, -mu],
+                [0., mu, mu],
+                ])
+    return A
+
+def roty_small(mu):
+    A = jnp.block([[mu, 0., mu],
+                   [0., 1., 0.],
+                   [-mu, 0., mu]
+                   ])
+    return A
+
+def rotz_small(mu):
+    A = jnp.block([[mu, -mu, 0.],
+                   [mu, mu, 0.],
+                   [0., 0., 1.]
+                   ])
+    return A
+
+def tranx(mu):
+    A = jnp.array([[1., 0., 0., mu],
+                   [0., 1., 0., 0.],
+                   [0., 0., 1., 0.],
+                   [0., 0., 0., 1.]])
+    return A
+
+def trany(mu):
+    A = jnp.array([[1., 0., 0., 0.],
+                   [0., 1., 0., mu],
+                   [0., 0., 1., 0.],
+                   [0., 0., 0., 1.]])
+    return A
+
+def tranz(mu):
+    A = jnp.array([[1., 0., 0., 0.],
+                   [0., 1., 0., 0.],
+                   [0., 0., 1., mu],
+                   [0., 0., 0., 1.]])
+    return A
+
+def hatSE3(x):
+    S = jnp.block([
+        skew(x[3:6]), x[0:3], jnp.zeros((4,1))
+    ])
+    return S
 
 
 class TorqueExample:
@@ -127,6 +215,255 @@ class TorqueExample:
                 e.set()
         return check
     
+    # @partial(jax.jit, static_argnames=['q0'])
+    def V(self, q0):
+        q2 = q0.at[1,0].get()      #pass the joint variable to the specific joints 
+        q4 = q0.at[3,0].get()
+        q6 = q0.at[5,0].get()
+        q1 = q0.at[0,0].get()              #pass out to joints. Values of holonomic constraint
+        q3 = q0.at[2,0].get()
+        q5 = q0.at[4,0].get()
+        q7 = q0.at[6,0].get()
+
+
+        l1 = 156.4e-3
+        l2 = 128.4e-3
+        l3 = 210.4e-3
+        l4 = 210.4e-3
+        l5 = 208.4e-3
+        l6 = 105.9e-3
+        l7 = 105.9e-3
+        l8 = 61.5e-3
+
+        d1 = 5.4e-3
+        d2 = 6.4e-3
+
+
+        g = 9.81
+        m1 = 1.697
+        m2 = 1.377
+        m3 = 1.1636
+        m4 = 1.1636
+        m5 = 0.930
+        m6 = 0.678
+        m7 = 0.678
+        m8 = 0.5
+        A01 = tranz(l1)@rotx(pi)@rotz(q1)          
+        A12 = rotx(pi/2)@tranz(-d1)@trany(-l2)@rotz(q2)
+        A23 = rotx(-pi/2)@trany(d2)@tranz(-l3)@rotz(q3)
+        A34 = rotx(pi/2)@tranz(-d2)@trany(-l4)@rotz(q4)
+        A45 = rotx(-pi/2)@trany(d2)@tranz(-l5)@rotz(q5)
+        A56 = rotx(pi/2)@trany(-l6)@rotz(q6)
+        A67 = rotx(-pi/2)@tranz(-l7)@rotz(q7)
+    
+        # A01 = jnp.array([[1., 0., 0., 0.],
+        #                 [0.,-1., 0., 0.],
+        #                 [0., 0.,-1., 0.1564],
+        #                 [0., 0., 0., 1.]])@rotz(q1) 
+        
+        # A12 = jnp.array([[1., 0., 0., 0.],
+        #                 [0., 0.,-1., 0.0054],
+        #                 [0., 1., 0.,-0.1284],
+        #                 [0., 0., 0., 1.]])@rotz(q2)
+        
+        # A23 = jnp.array([[1., 0., 0., 0.],
+        #                 [0., 0., 1., -0.2104],
+        #                 [0.,-1., 0., -0.0064],
+        #                 [0., 0., 0., 1.]])@rotz(q3)
+        
+        # A34 = jnp.array([[1., 0., 0., 0.],
+        #                 [0., 0.,-1., 0.0064],
+        #                 [0., 1., 0.,-0.2104],
+        #                 [0., 0., 0., 1.]])@rotz(q4)
+        
+        # A45 = jnp.array([[1., 0., 0., 0.],
+        #                 [0., 0., 1.,-0.2084],
+        #                 [0.,-1., 0.,-0.0064],
+        #                 [0., 0., 0., 1.]])@rotz(q5)
+        
+        # A56 = jnp.array([[1., 0., 0., 0.],
+        #                 [0., 0.,-1., 0.],
+        #                 [0., 1., 0.,-0.1059],
+        #                 [0., 0., 0., 1.]])@rotz(q6)
+        
+        # A67 = jnp.array([[1., 0., 0., 0.],
+        #                 [0., 0., 1.,-0.1059],
+        #                 [0.,-1., 0., 0.],
+        #                 [0., 0., 0., 1.]])@rotz(q7)
+        
+        A7E = jnp.array([[1., 0., 0., 0.],
+                        [0.,-1., 0., 0.],
+                        [0., 0.,-1.,-0.0615],
+                        [0., 0., 0., 1.]])
+
+        A02 = A01@A12
+        A03 = A02@A23
+        A04 = A03@A34
+        A05 = A04@A45
+        A06 = A05@A56
+        A07 = A06@A67
+        # A0E = A07@A7E
+        # A0G = A0E@AEG
+
+        # print(A01-A01old)
+        # print(A12-A12old)
+        # print(A23-A23old)
+        # print(A34-A34old)
+        # print(A45-A45old)
+        # print(A56-A56old)
+        # print(A67-A67old)
+        # print(A7E-A7Eold)
+
+        # c1 = jnp.transpose(jnp.array([-6.48e-4, -1.66e-4, 8.4487e-2]))       #frame 0, link 1
+        # c2 = jnp.transpose(jnp.array([-2.3e-5, -1.0364e-2, -7.336e-2]))   #frame 1, link 2
+        # c3 = jnp.transpose(jnp.array([-4.4e-5, -9.958e-2, -1.3278e-2]))  #frame 2, link 3
+        # c4 = jnp.transpose(jnp.array([-4.4e-5, -6.641e-3, -1.17892e-1]))  #frame 3, link 4
+        # c5 = jnp.transpose(jnp.array([-1.8e-5, -7.5478e-2, -1.5006e-2]))  #frame 4, link 5
+        # c6 = jnp.transpose(jnp.array([1e-6, -9.432e-3, -6.3883e-2]))  #frame 5, link 6
+        # c7 = jnp.transpose(jnp.array([1e-6, -4.5483e-2, -9.650e-3]))  #frame 6, link 7
+        # c8 = jnp.transpose(jnp.array([-2.81e-4, -1.1402e-2, -2.9798e-2]))  #frame 7, link E
+        # cGripper = jnp.transpose(jnp.array([0.,0.,5.8e-2]))
+        ## Mass Matrix
+        c1x = -6.48e-4
+        c1y = -1.66e-4
+        c1z =  8.4487e-2
+        
+        c2x = -2.3e-5
+        c2y = -1.0364e-2
+        c2z = -7.336e-2
+        
+        c3x = -4.4e-5
+        c3y = -9.958e-2
+        c3z = -1.3278e-2
+        
+        c4x = -4.4e-5
+        c4y = -6.641e-3
+        c4z = -1.17892e-1
+        
+        c5x = -1.8e-5
+        c5y = -7.5478e-2
+        c5z = -1.5006e-2
+        
+        c6x = 1e-6
+        c6y = -9.432e-3
+        c6z = -6.3883e-2
+        
+        c7x = 1e-6
+        c7y = -4.5483e-2
+        c7z = -9.650e-3
+        
+        c8x = -2.81e-4
+        c8y = -1.1402e-2
+        c8z = -2.9798e-2
+
+        A0c1 = tranx(c1x)@trany(c1y)@tranz(c1z)
+        A0c2 = A01@tranx(c2x)@trany(c2y)@tranz(c2z)
+        A0c3 = A02@tranx(c3x)@trany(c3y)@tranz(c3z)
+        A0c4 = A03@tranx(c4x)@trany(c4y)@tranz(c4z)
+        A0c5 = A04@tranx(c5x)@trany(c5y)@tranz(c5z)
+        A0c6 = A05@tranx(c6x)@trany(c6y)@tranz(c6z)
+        A0c7 = A06@tranx(c7x)@trany(c7y)@tranz(c7z)
+        A0c8 = A07@tranx(c8x)@trany(c8y)@tranz(c8z)
+        # A0cG = A0E@tranz(cGz)
+
+        #         # Geometric Jacobians
+        # R01 = A01[0:3,0:3]     #rotation matrices
+        # R12 = A12[0:3,0:3]
+        # R23 = A23[0:3,0:3]
+        # R34 = A34[0:3,0:3]
+        # R45 = A45[0:3,0:3]
+        # R56 = A56[0:3,0:3]
+        # R67 = A67[0:3,0:3]
+        # R7E = A7E[0:3,0:3]
+
+        # r100   = A01[0:3,[3]]
+        # r200   = A02[0:3,[3]]
+        # r300   = A03[0:3,[3]]
+        # r400   = A04[0:3,[3]]
+        # r500   = A05[0:3,[3]]
+        # r600   = A06[0:3,[3]]
+        # r700   = A07[0:3,[3]]
+        rc100   = A0c1[0:3,[3]]
+        rc200   = A0c2[0:3,[3]]
+        rc300   = A0c3[0:3,[3]]
+        rc400   = A0c4[0:3,[3]]
+        rc500   = A0c5[0:3,[3]]
+        rc600   = A0c6[0:3,[3]]
+        rc700   = A0c7[0:3,[3]]
+        rc800   = A0c8[0:3,[3]]
+
+        # z00 = jnp.array([[0.], [0.], [1.]])
+        # z01 = R01@z00
+        # z02 = R01@R12@z00
+        # z03 = R01@R12@R23@z00
+        # z04 = R01@R12@R23@R34@z00
+        # z05 = R01@R12@R23@R34@R45@z00
+        # z06 = R01@R12@R23@R34@R45@R56@z00
+        # z07 = R01@R12@R23@R34@R45@R56@R67@z00
+        # # z08 = R01@R12@R23@R34@R45@R56@R67@R7E@z00
+
+        # ske1 = skew(z01)
+        # ske2 = skew(z02)
+        # ske3 = skew(z03)
+        # ske4 = skew(z04)
+        # ske5 = skew(z05)
+        # ske6 = skew(z06)
+        # ske7 = skew(z07)
+
+        # Jc2   = jnp.block([
+        #     [ske1@(rc200-r100),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))],   #jnp.zeros((3,1))],
+        #     [z01,                 jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))]  # jnp.zeros((3,1))]
+        #     ])
+        # Jc3   = jnp.block([
+        #     [ske1@(rc300-r100),  ske2@(rc300-r200),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))],  # jnp.zeros((3,1))],
+        #     [z01,                z02              ,   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))]  # jnp.zeros((3,1))]
+        #     ])
+        # Jc4   = jnp.block([
+        #     [ske1@(rc400-r100),  ske2@(rc400-r200),  ske3@(rc400-r300),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))], #  jnp.zeros((3,1))],
+        #     [z01,                z02,                 z03             ,   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))]   #jnp.zeros((3,1))]
+        #     ])
+        # Jc5   = jnp.block([
+        #     [ske1@(rc500-r100),  ske2@(rc500-r200),  ske3@(rc500-r300),  ske4@(rc500-r400),   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))],  # jnp.zeros((3,1))],
+        #     [z01,                z02,                z03,                z04              ,   jnp.zeros((3,1)),   jnp.zeros((3,1)),   jnp.zeros((3,1))]  # jnp.zeros((3,1))]
+        #     ])
+        # Jc6   = jnp.block([
+        #     [ske1@(rc600-r100),  ske2@(rc600-r200),  ske3@(rc600-r300),  ske4@(rc600-r400),  ske5@(rc600-r500),   jnp.zeros((3,1)),   jnp.zeros((3,1))],   #jnp.zeros((3,1))],
+        #     [z01,                z02,                z03,                z04,                z05              ,   jnp.zeros((3,1)),   jnp.zeros((3,1))] #  jnp.zeros((3,1))]
+        #     ])
+        # Jc7   = jnp.block([
+        #     [ske1@(rc700-r100),  ske2@(rc700-r200),  ske3@(rc700-r300),  ske4@(rc700-r400),  ske5@(rc700-r500),  ske6@(rc700-r600),   jnp.zeros((3,1))],  #jnp.zeros((3,1))],
+        #     [z01,                z02              ,  z03,                z04,                z05,                z06              ,   jnp.zeros((3,1))]   #jnp.zeros((3,1))]
+        #     ])
+        # Jc8   = jnp.block([
+        #     [ske1@(rc800-r100),  ske2@(rc800-r200),  ske3@(rc800-r300),  ske4@(rc800-r400),  ske5@(rc800-r500),  ske6@(rc800-r600),  ske7@(rc800-r700)], #  jnp.zeros((3,1))],
+        #     [z01,                z02,                z03              ,  z04,                z05,                z06,                z07              ]  #,   jnp.zeros((3,1))]
+        #     ])
+
+
+        # g0 = jnp.array([[0],[0],[-g]])
+        # tauc2 = jnp.block([[m2*g0],[jnp.zeros((3,1))]])
+        # tauc3 = jnp.block([[m3*g0],[jnp.zeros((3,1))]])
+        # tauc4 = jnp.block([[m4*g0],[jnp.zeros((3,1))]])
+        # tauc5 = jnp.block([[m5*g0],[jnp.zeros((3,1))]])
+        # tauc6 = jnp.block([[m6*g0],[jnp.zeros((3,1))]])
+        # tauc7 = jnp.block([[m7*g0],[jnp.zeros((3,1))]])
+        # tauc8 = jnp.block([[m8*g0],[jnp.zeros((3,1))]])
+        # grav      = -jnp.transpose(( + jnp.transpose(tauc2)@Jc2 + jnp.transpose(tauc3)@Jc3 + jnp.transpose(tauc4)@Jc4 + jnp.transpose(tauc5)@Jc5 + jnp.transpose(tauc6)@Jc6 + jnp.transpose(tauc7)@Jc7 + jnp.transpose(tauc8)@Jc8))
+
+
+        # # Mq = jnp.transpose(holonomicTransform)@Mq7@holonomicTransform  #transform needed to produce Mq_hat
+        # gq1 = grav[1,0]
+        # gq2 = grav[3,0]
+        # gq3 = grav[5,0]
+        # return gq1, gq2, gq3
+        g0 = jnp.array([[0.],[0.],[-g]])
+        gprime = jnp.transpose(g0)
+
+        V = -m1*gprime@rc100-m2*gprime@rc200-m3*gprime@rc300-m4*gprime@rc400-m5*gprime@rc500-m6*gprime@rc600 -m7*gprime@rc700 -m8*gprime@rc800 #-mGripper*gprime@rcG00
+        # V = V
+        # print('V',V)
+        return V.at[0].get()
+
 
     def set_initial_position(self):
 
@@ -190,7 +527,7 @@ class TorqueExample:
             # if action.name == "Home":
                 # action_handle = action.handle
 
-        print(action_list)
+        # print(action_list)
 
         if action_handle == None:
             print("Can't reach safe position. Exiting")
@@ -228,14 +565,8 @@ class TorqueExample:
         self.controlHist = jnp.zeros((3,l))
         self.timeStore = jnp.zeros(l)
 
-        
         trucated_t = jnp.arange(0,(t_end-2.),sampling_time_cyclic)      #this is used as a safety. Last 2 seconds will have 0 torques
 
-        #also define the control actions that we're gonna take.
-
-        u1 = sinusoid(self.t,0.,0.1,0.)     #t,origin,freq,amp)         #need a way to stabilise the sinusoid wrt. time.
-        u2 = sinusoid(self.t,0.,0.5,0.)     #t,origin,freq,amp)
-        u3 = sinusoid(self.t,0.,0.5,3.)     #t,origin,freq,amp)
         l_short = jnp.size(trucated_t)
 
         print('sampling time', sampling_time_cyclic)
@@ -337,19 +668,20 @@ class TorqueExample:
         timetemp = self.timeStore
 
         #define sinusoide amplitudes, freqs
-        amp1 = 15.
-        freq1 = 1.
+        amp1 = 5.
+        freq1 = 0.2
         amp2 = 0.
         freq2 = 0.5
         amp3 = 0.
         freq3 = 0.5
 
-
         
-        q_bold1 = (pi/180.)*self.base_feedback.actuators[0].position
-        q_bold2 = (pi/180.)*self.base_feedback.actuators[2].position
-        q_bold3 = (pi/180.)*self.base_feedback.actuators[4].position
-        q_bold4 = (pi/180.)*self.base_feedback.actuators[6].position
+        self.dV_func = jacfwd(self.V)
+        
+        q_bold1 = self.base_feedback.actuators[0].position
+        q_bold2 = self.base_feedback.actuators[2].position
+        q_bold3 = self.base_feedback.actuators[4].position
+        q_bold4 = self.base_feedback.actuators[6].position
 
         # Initial delta between first and last actuator
         # init_delta_position = self.base_feedback.actuators[0].position - self.base_feedback.actuators[self.actuator_count - 1].position
@@ -365,6 +697,8 @@ class TorqueExample:
         t_cyclic = t_now  # cyclic time
         t_stats = t_now  # print  time
         t_init = t_now  # init   time
+        no_of_actuators = self.actuator_count
+        end_time = self.cyclic_t_end
         # tic = 0
         counter = 0
         print("Running torque control example for {} seconds".format(self.cyclic_t_end))
@@ -381,16 +715,15 @@ class TorqueExample:
                 #        actuator continue to move under torque command, resulting position error with command will
                 #        trigger a following error and switch back the actuator in position command to hold its position
                 
-                self.base_command.actuators[1].position = self.base_feedback.actuators[1].position
-                self.base_command.actuators[3].position = self.base_feedback.actuators[3].position
-                self.base_command.actuators[5].position = self.base_feedback.actuators[5].position
-
-                q1 = (pi/180.)*self.base_feedback.actuators[1].position
-                q2 = (pi/180.)*self.base_feedback.actuators[3].position
-                q3 = (pi/180.)*self.base_feedback.actuators[5].position
+                q1 = self.base_feedback.actuators[1].position
+                q2 = self.base_feedback.actuators[3].position
+                q3 = self.base_feedback.actuators[5].position
+                self.base_command.actuators[1].position = q1
+                self.base_command.actuators[3].position = q2
+                self.base_command.actuators[5].position = q3
                 #Constant values. Will measure feedback to ensure model is always correct
                 # print('q1',q1)
-                q = jnp.array([[q_bold1],
+                q = (pi/180.)*jnp.array([[q_bold1],
                                [q1],
                                [q_bold2],
                                [q2],
@@ -402,45 +735,36 @@ class TorqueExample:
                 q2dot = self.base_feedback.actuators[3].velocity
                 q3dot = self.base_feedback.actuators[5].velocity
 
-                # print('q2dot', q2dot)
+                gq1, gq2, gq3 = gq(q)
 
                 t_elapsed = t_now - t_init
                 #get control actions
-                grav = gq(q)
-                timetemp[counter] = t_elapsed  #time since script started
-
-                if (t_elapsed < (self.cyclic_t_end - 5)):
-                    v1 = sinusoid_instant(t_elapsed,0.,freq1,amp1)
-                    v2 = sinusoid_instant(t_elapsed,0.,freq2,amp2)
-                    v3 = sinusoid_instant(t_elapsed,0.,freq3,amp3)
-                    # v3 = controlActions_temp[2,counter]
-                else:           #set torques to 0 to slow down
+                timetemp = timetemp.at[counter].set(t_elapsed)  #time since script started
+                
+                #v1 = sinusoid_instant(t_elapsed,0.,freq1,amp1)
+                # v2 = sinusoid_instant(t_elapsed,0.,freq2,amp2)
+                # v3 = sinusoid_instant(t_elapsed,0.,freq3,amp3)
+                if (t_elapsed > (end_time - 5)):
                     print('slowing')
                     v1 = 0
                     v2 = 0
                     v3 = 0
 
-                gq1 = grav[1,0]
-                gq2 = grav[3,0]
-                gq3 = grav[5,0]
-
-                u1 = 2*gq1 + v1
-                u2 = 2*gq2 #+ v2
-                u3 = 2*gq3 #+ v3
+                u1 = gq1 + gq1 #+ v1
+                u2 = gq2 + gq2 #+ v2
+                u3 = gq3 + gq3 #+ v3
                 # print('u1',u1)
-                self.base_command.actuators[1].torque_joint = u1
+                self.base_command.actuators[1].torque_joint = u1#.tolist()
                 # Grav comp is sent to fourth actuator
-                self.base_command.actuators[3].torque_joint = u2
+                self.base_command.actuators[3].torque_joint = u2#.tolist()
                 # Grav comp is sent to sixth actuator
-                self.base_command.actuators[5].torque_joint = u3
-
-                # self.base_command.actuators[5].torque_joint = 0
-                # self.base_command.actuators[5].torque_joint = -self.base_feedback.actuators[5].torque
-                # Incrementing identifier ensure actuators can reject out of time frames
+                self.base_command.actuators[5].torque_joint = u3#.tolist()
+                
+                 # Incrementing identifier ensure actuators can reject out of time frames
                 self.base_command.frame_id += 1
                 if self.base_command.frame_id > 65535:
                     self.base_command.frame_id = 0
-                for i in range(self.actuator_count):
+                for i in range(no_of_actuators):
                     self.base_command.actuators[i].command_id = self.base_command.frame_id
 
                 # Frame is sent
@@ -451,15 +775,12 @@ class TorqueExample:
                 cyclic_count = cyclic_count + 1
 
                 #store
-                controlHist_temp[:,[counter]] = jnp.array([[u1],[u2],[u3]])
-
-                q_storage_temp[:,[counter]] = q
-                vel_storage_temp[:,[counter]] = jnp.array([[q1dot],
-                               [q2dot],
-                               [q3dot],
-                               ])
-
-                
+                controlHist_temp = controlHist_temp.at[:,[counter]].set(jnp.array([[u1],[u2],[u3]]))
+                q_storage_temp = q_storage_temp.at[:,[counter]].set(q)
+                vel_storage_temp = vel_storage_temp.at[:,[counter]].set(jnp.array([[q1dot],
+                                                                        [q2dot],
+                                                                        [q3dot],
+                                                                        ]))
                 counter = counter + 1       #index
 
             # Stats Print
@@ -487,6 +808,14 @@ class TorqueExample:
                 self.f1 = freq1
                 self.f2 = freq2
                 self.f3 = freq3
+
+                #Redefine position commands
+                q1 = self.base_feedback.actuators[1].position
+                q2 = self.base_feedback.actuators[3].position
+                q3 = self.base_feedback.actuators[5].position
+                self.base_command.actuators[1].position = q1
+                self.base_command.actuators[3].position = q2
+                self.base_command.actuators[5].position = q3
 
                 break
         self.cyclic_running = False
@@ -526,10 +855,10 @@ class TorqueExample:
         print('Saving Data')
         l = jnp.size(self.t)
         
-        details = ['Saved Data from Physical Implementation! This file has double grav comp so the robot arm swings to a vertical position']
+        details = ['Saved Data from Physical Implementation! This file has double grav comp so the robot arm swings to a vertical position. Trying to optimise code for refresh rate']
         values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
         header = ['Time', 'State History']
-        with open('/root/FYP/Kinova/examples/108-Gen3_torque_control/data/freeswing_v1sin_3', 'w', newline='') as f:
+        with open('/root/FYP/Kinova/examples/108-Gen3_torque_control/data/candlestick_nomove', 'w', newline='') as f:
 
             writer = csv.writer(f)
             # writer.writerow(simtype)
@@ -539,20 +868,20 @@ class TorqueExample:
 
             # writer.writerow(['Time', t])
             for i in range(l):
-                timestamp = self.timeStore[i]           #time
-                q1 = self.q_storage[0,i]               #postion
-                q2 = self.q_storage[1,i]
-                q3 = self.q_storage[2,i]
-                q4 = self.q_storage[3,i]
-                q5 = self.q_storage[4,i]
-                q6 = self.q_storage[5,i]
-                q7 = self.q_storage[6,i]
-                qdot1 = self.vel_storage[0,i]               #FOR MOMENTUM LATER
-                qdot2 = self.vel_storage[1,i]
-                qdot3 = self.vel_storage[2,i]
-                v1 = self.controlHist[0,i]       #control values
-                v2 = self.controlHist[1,i] 
-                v3 = self.controlHist[2,i] 
+                timestamp = self.timeStore.at[i].get()           #time
+                q1 = self.q_storage.at[0,i].get()               #postion
+                q2 = self.q_storage.at[1,i].get()
+                q3 = self.q_storage.at[2,i].get()
+                q4 = self.q_storage.at[3,i].get()
+                q5 = self.q_storage.at[4,i].get()
+                q6 = self.q_storage.at[5,i].get()
+                q7 = self.q_storage.at[6,i].get()
+                qdot1 = self.vel_storage.at[0,i].get()               #FOR MOMENTUM LATER
+                qdot2 = self.vel_storage.at[1,i].get()
+                qdot3 = self.vel_storage.at[2,i].get()
+                v1 = self.controlHist.at[0,i].get()       #control values
+                v2 = self.controlHist.at[1,i].get() 
+                v3 = self.controlHist.at[2,i].get() 
                 data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,qdot1,qdot2,qdot3, v1,v2,v3]
                 
                 writer.writerow(data)
@@ -560,6 +889,9 @@ class TorqueExample:
 
         print('Data Saved!')
         return
+    
+    
+
 
     @staticmethod
     def SendCallWithRetry(call, retry,  *args):
@@ -593,7 +925,7 @@ def main():
     parser.add_argument("--print_stats", default=True, help="print stats in command line or not (0 to disable)", type=lambda x: (str(x).lower() not in ['false', '0', 'no']))
     args = utilities.parseConnectionArguments(parser)
 
-
+        
 
     # Create connection to the device and get the router
     with utilities.DeviceConnection.createTcpConnection(args) as router:
@@ -601,6 +933,7 @@ def main():
         with utilities.DeviceConnection.createUdpConnection(args) as router_real_time:
 
             example = TorqueExample(router, router_real_time)
+            
             args.cyclic_time = 0.005
             args.duration = 20
             example.InitStorage(args.cyclic_time, args.duration)

@@ -639,7 +639,7 @@ def observer_dynamics(xp,q,phi,u,Cq_phat,D,dVq,Tq):
     # xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u+u0)
     #these dynamics substitue phat = xp + phi*q for better performance with RK4 solve
     # print('ObsdVq',dVq)
-    xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + u      #Gq@(u+u0) = u as control law isn't multiplied by Gq^-1
+    xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + Gq@u      #Gq@(u+u0) = u as control law isn't multiplied by Gq^-1
     return  xp_dot
 
 #This function allows the observer dynamics to be integrated with the RK4 function. Everything as a function of q
@@ -709,26 +709,26 @@ def observerSwitch(q,phi,xp,kappa):
 
 ################ IMPORT REAL DATA ######################
 
-data = pd.read_csv("7LINK_IMPLEMENTATION/data/freeswing_v1sin",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
+data = pd.read_csv("7LINK_IMPLEMENTATION/data/candlestick_nomove",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
 print(data.head())      #prints first 5 rows. tail() prints last 5
 
 data_array = data.to_numpy()
 print('Data Size', jnp.shape(data_array))
-start = 0
-end = 3000      #this ill be 2000 later
+start = 10      #avoid first time step
+end = 500      #this ill be 2000 later
 t = data_array[start:end,[1]]
-t = t.astype('float32')
+t = t.astype('float64')
 t = jnp.transpose(t)
 
 q7HistT = data_array[start:end,3:10]         #only pull out actuators 2, 4, 6
 vel3HistT = data_array[start:end,10:13]
 controlHistT = data_array[start:end,13:16]
 # print(xHistT)
-q7HistT = q7HistT.astype('float32')
-vel3HistT = vel3HistT.astype('float32')
-controlHistT = controlHistT.astype('float32')
+q7HistT = q7HistT.astype('float64')
+vel3HistT = vel3HistT.astype('float64')
+controlHistT = controlHistT.astype('float64')
 q7Hist = jnp.transpose(q7HistT)
-vel3Hist = jnp.transpose(vel3HistT)
+vel3Hist = jnp.transpose(vel3HistT) #transpose and adjust to radians
 controlHist = jnp.transpose(controlHistT)
 
 print('size vel', jnp.shape(vel3Hist))
@@ -738,7 +738,8 @@ qHist = q7Hist[[1,3,5],:]         #extract from actuators that move
 q_0 = qHist[:,[0]]
 print('q0',q_0)
 dt = diff_finite(t,t)
-
+print('dt',dt)
+# print(fake)
 
 # q_0 = jnp.transpose(q_initial)
 s = self()
@@ -748,13 +749,14 @@ s = robotParams(s)
 #                     [q7Hist.at[0,0].get()],
 #                     [q7Hist.at[2,0].get()],
 #                     [q7Hist.at[4,0].get()],
-#                     [q7Hist.at[6,0].get()],
+#                     [q7Hist.at[6,0].get()]])
 constants = jnp.array([                 #These are the positions the wrists are locked to
                     [0],        #assumption that they equal 0 should be fine
                     [0],
                     [0],
                     [0],])
 s.constants = constants         #for holonomic transform
+print('Constants', constants)
 
 holonomicTransform = jnp.array([
         [0.,0.,0.],
@@ -815,9 +817,9 @@ for k in range(l):
 
     Mq_hat, Tq_hat, Tqinv_hat, Jc_hat = massMatrix_holonomic(q_hat,s)
     vel_hat = jnp.array([
-                    [vel3Hist.at[0,k].get()],
-                    [vel3Hist.at[1,k].get()],
-                    [vel3Hist.at[2,k].get()]])
+                    [(pi/180.)*vel3Hist.at[0,k].get()],
+                    [(pi/180.)*vel3Hist.at[1,k].get()],
+                    [(pi/180.)*vel3Hist.at[2,k].get()]])
     
     p0_short = Mq_hat@vel_hat
     p_shorttemp = Tq_hat@p0_short
@@ -834,7 +836,7 @@ for k in range(l):
 
 
 # print(fake)
-
+print('p0', pHist.at[:,[0]].get())
 xHist = jnp.block([[qHist],[pHist]])
 
 xe0 = endEffector(q_0,s)
@@ -857,7 +859,7 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 
 #Initialise Simulation Parameters
 # dt = 0.005
-substeps = 1
+substeps = 2
 # dt_sub = dt/substeps      #no longer doing substeps
 # T = 10.
 
@@ -866,9 +868,11 @@ substeps = 1
 
 
 #Define Friction
-D_obs = jnp.array([5.,5.,5.,])@jnp.eye(3)
-# D_obs = jnp.array([5.0465087890625,5.0465087890625,5.079345703125])@jnp.eye(n)
-                        #^ as determined from optimisation. Need to run opt for 2 though
+# D_obs = jnp.array([67.,67.,50])@jnp.eye(3)
+D_obs = 30.*jnp.eye(n) 
+print('Dobs', D_obs)
+# D_obs = jnp.array([67.12255859375, 67.12255859375, 67.12255859375])@jnp.eye(n)
+                        #^ as determined from optimisation. Need to run opt for 3 though. 2nd is assumed same as 1st.
 
 
 #Define Initial Values
@@ -899,8 +903,7 @@ kappa = 4.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
-phatHist = phatHist.at[:,[0]].set(phat0)
-xpHist = xpHist.at[:,[0]].set(xp0)
+
 
 while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
     phitemp, xptmp = observerSwitch(q_0,phi,xp0,kappa)
@@ -908,6 +911,9 @@ while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
     xp0 = xptmp
     print('xp0', xp0)
     print(phi)
+
+phatHist = phatHist.at[:,[0]].set(phat0)
+xpHist = xpHist.at[:,[0]].set(xp0)
 
 
 ###################### OFFLINE PROCESSING####################
@@ -918,7 +924,7 @@ jnp.set_printoptions(precision=15)
 for k in range(l):
     time = t.at[:,k].get()
     dt_instant = dt.at[:,k].get()
-    print('Time',time)
+    print('dt',dt_instant)
 
     x = xHist.at[:,[k]].get()
     q = jnp.array([[x.at[0,0].get()],
@@ -927,8 +933,10 @@ for k in range(l):
     p = jnp.array([[x.at[3,0].get()],        #This is currently returning p, not p0
                    [x.at[4,0].get()],
                    [x.at[5,0].get()]])
-    # print(q,p)
+    print('q',q)
+    print('p',p)
     xp = xpHist.at[:,[k]].get()
+    print('xp', xp)
     phat = xp + phi*q           #find phat for this timestep
 
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
@@ -942,10 +950,10 @@ for k in range(l):
 
     dTqinv_block = jnp.array([dTqinvdq1,dTqinvdq2,dTqinvdq3])
     # dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
-    dVdq = dV_func(q,constants)
+    # dVdq = dV_func(q,constants)
 
     # print(dVdq)
-    Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
+    # Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
 
 
     cond = switchCond(phat,kappa,phi,Tq,dTqinv_block)   #check if jump is necessary
@@ -963,34 +971,47 @@ for k in range(l):
     ptilde = phat - p       #observer error for k timestep
     print('p~',ptilde)
 
+
+    #Tq is needed for momentum transform
     v = controlHist.at[:,[k]].get()     #extract control applied to the robot
-    print('size v', jnp.shape(v))
+    # print('size v', jnp.shape(v))
+    print('v',v)        #v = G^-1(q)@v, as Tqinv is G^-1(q) from observer paper. Is not here as not multiplied by G(q) in observer dynamics
 
-    x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
-                        [x.at[1,0].get()],
-                        [x.at[2,0].get()],
-                        [xp.at[0,0].get()],
-                        [xp.at[1,0].get()],
-                        [xp.at[2,0].get()]])
+    # x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
+    #                     [x.at[1,0].get()],
+    #                     [x.at[2,0].get()],
+    #                     [xp.at[0,0].get()],
+    #                     [xp.at[1,0].get()],
+    #                     [xp.at[2,0].get()]])
 
-    Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
     obs_args = (phat,phi,v,D_obs,constants)
-            # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
-    xp_update = rk4(x_obs,ode_observer_wrapper,dt,*obs_args)          #call rk4 solver to update ode
-    # print('xp_update', xp_update)
-    # obs_args = (phi,v,Cqph,D,dVdq,Tq)     #this acts on th observer dyanmics directly
-    # xp_update = rk4(x_obs,observer_dynamics,dt_obs,*obs_args)
-    # xp_step = jnp.zeros((3,1))       #just put this here to test controller works
+    
+    # dt_sub = dt_instant/substeps
+    # print('dtsub', dt_sub)
+    # for i in range(substeps):
+    x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
+                [x.at[1,0].get()],
+                [x.at[2,0].get()],
+                [xp.at[0,0].get()],
+                [xp.at[1,0].get()],
+                [xp.at[2,0].get()]])
+        # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
+    xp_update = rk4(x_obs,ode_observer_wrapper,dt_instant,*obs_args)          #call rk4 solver to update ode
     xp_k  = jnp.array([[xp_update.at[3,0].get()],
                         [xp_update.at[4,0].get()],
                         [xp_update.at[5,0].get()]])
+    # xp = xp_k
     
+
+
+
     if jnp.isnan(xp_k.any()):       #check for problems
         print(xp_k)
         print('NAN found, exiting loop')
         break
 
-
+    Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
+    
     #Store Variables for next time step
     xpHist = xpHist.at[:,[k+1]].set(xp_k)
     
@@ -1042,7 +1063,16 @@ with open('/root/FYP/7LINK_IMPLEMENTATION/data/offlineProcessing', 'w', newline=
         v1 = controlHist.at[0,i].get()          #control values
         v2 = controlHist.at[1,i].get()
         v3 = controlHist.at[2,i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,v1,v2,v3]
+        ph1 = phatHist.at[0,i].get()
+        ph2 = phatHist.at[1,i].get()
+        ph3 = phatHist.at[2,i].get()
+        Hobs = H0Hist.at[i].get()               #Observer energy
+        ph = phiHist.at[i].get()                #phi
+        xp1 = xpHist.at[0,i].get()              #xp
+        xp2 = xpHist.at[1,i].get()
+        xp3 = xpHist.at[2,i].get()
+        sc = switchHist.at[i].get()    
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,ph1,ph2,ph3,ph,Hobs,sc,xp1,xp2,xp3,v1,v2,v3]
         
         writer.writerow(data)
 

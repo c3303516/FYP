@@ -125,9 +125,9 @@ def massMatrix_continuous(q_hat,qconstants):
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
     q4 = q_bold.at[4].get()
-    q6 = q_bold.at[5].get()
+    q2 = q_bold.at[5].get()
 
-    q2 = q_hat.at[0].get()
+    q6 = q_hat.at[0].get()
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
     # print('q1',q1)
@@ -345,11 +345,11 @@ def MqPrime(q_hat,constants):
     Mq = massMatrix_continuous(q_hat,constants)
     holo = jnp.array([
         [0.],
+        [0.],
+        [0.],
+        [0.],
+        [0.],
         [1.],
-        [0.],
-        [0.],
-        [0.],
-        [0.],
         [0.],
     ])
     
@@ -426,9 +426,9 @@ def Vq(q_hat, qconstants):
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
     q4 = q_bold.at[4].get()
-    q6 = q_bold.at[5].get()
+    q2 = q_bold.at[5].get()
 
-    q2 = q_hat.at[0].get()
+    q6 = q_hat.at[0].get()
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
 
@@ -609,7 +609,7 @@ print(data.head())      #prints first 5 rows. tail() prints last 5
 data_array = data.to_numpy()
 
 start = 1000
-end = 1500      #this ill be 2000 later
+end = 1200      #this ill be 2000 later
 t = data_array[start:end,[1]]
 t = t.astype('float32')
 t = jnp.transpose(t)
@@ -628,8 +628,8 @@ controlHist = jnp.transpose(controlHistT)
 # print(jnp.shape(velHist))
 # print(jnp.shape(controlHist))
 
-qHist = q7Hist[[1],:]         #this will only be the actuator we care about.        ############# CHANGE THIS
-velHist = vel3Hist[[0],:]     # vel is 3
+qHist = q7Hist[[5],:]         #this will only be the actuator we care about.        ############# CHANGE THIS
+velHist = vel3Hist[[2],:]     # vel is 3
 
 print('size qhist', jnp.shape(qHist))
 
@@ -653,11 +653,11 @@ s.constants = constants         #for holonomic transform
 
 holonomicTransform = jnp.array([
         [0.],
-        [1.],         #only actuator we car about? might have to reduce the rows. write this out.
+        [0.],         #only actuator we car about? might have to reduce the rows. write this out.
         [0.],
         [0.],
         [0.],
-        [0.],
+        [1.],
         [0.],
     ])
 
@@ -762,7 +762,7 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
         dt_instant = dt.at[:,k].get()
         print('dt',dt_instant)
 
-        v = controlHist.at[[0],[k]].get()     #extract control applied to the robot
+        v = controlHist.at[[2],[k]].get()     #extract control applied to the robot, REMEMBER TO CHANGE TO ACTUATOR
         # print('shape v',jnp.shape(v))
         x = x_sim.at[:,[k]].get()
         # q = jnp.array([[x.at[0,0].get()],
@@ -828,7 +828,7 @@ def optimisationCost(dampP,X,simFunc,xstart,controlHist,t,dt):
 
 # print('sie qhist', jnp.size(qHist))
 args = (qHist,simulation,x0,controlHist,t,dt)
-dampingParamInitial = 5.        #optimisation indicates this is best? find that odd
+dampingParamInitial = 30.        
 dampingParamOpt = fmin(optimisationCost,dampingParamInitial,args,disp=True)
 
 print('Damping Param',dampingParamOpt)
@@ -855,7 +855,7 @@ print('Saving Data')
 details = ['Damping Parameter:', dampingParamOpt]
 # values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
 # header = ['Time', 'State History']
-with open('SYSTEM_IDENTIFICATION/data/dampingParameter1', 'w', newline='') as f:
+with open('SYSTEM_IDENTIFICATION/data/dampingParameter3', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

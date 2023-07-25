@@ -8,7 +8,7 @@ from jax.scipy.linalg import sqrtm
 
 @partial(jax.jit, static_argnames=['s'])
 def massMatrix_holonomic(q0, s):
-    q2 = q0.at[0].get()      #pass the joint variable to the specific joints 
+    q6 = q0.at[0].get()      #pass the joint variable to the specific joints 
     # q4 = q0.at[1].get()
     # q6 = q0.at[2].get()
 
@@ -27,7 +27,7 @@ def massMatrix_holonomic(q0, s):
     q5 = q0_bold.at[2].get()
     q7 = q0_bold.at[3].get()
     q4 = q0_bold.at[2].get()
-    q6 = q0_bold.at[3].get()
+    q2 = q0_bold.at[3].get()
 
     ## Effector FKM
     A01 = tranz(s.l1)@rotx(pi)@rotz(q1)          
