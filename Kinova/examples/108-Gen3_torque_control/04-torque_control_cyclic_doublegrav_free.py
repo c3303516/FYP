@@ -61,7 +61,7 @@ import threading
 
 #import custom scripts
 from sinusoid import sinusoid, sinusoid_instant
-import jax.numpy as jnp
+import numpy as jnp
 from params import robotParams
 from numpy import pi,sin,cos,linalg
 from gravcomp import gq
@@ -69,9 +69,9 @@ import csv
 import jax
 from jax import grad, jacobian, jacfwd
 
-from functools import partial
-from jax.config import config
-config.update("jax_enable_x64", True)
+# from functools import partial
+# from jax.config import config
+# config.update("jax_enable_x64", True)
 
 ################ HOMOGENEOUS TRANSFORMS ###############################
 
@@ -670,8 +670,8 @@ class TorqueExample:
         #define sinusoide amplitudes, freqs
         amp1 = 5.
         freq1 = 0.2
-        amp2 = 0.
-        freq2 = 0.5
+        amp2 = 5.
+        freq2 = 0.2
         amp3 = 0.
         freq3 = 0.5
 
@@ -739,10 +739,10 @@ class TorqueExample:
 
                 t_elapsed = t_now - t_init
                 #get control actions
-                timetemp = timetemp.at[counter].set(t_elapsed)  #time since script started
+                timetemp[counter] = t_elapsed  #time since script started
                 
-                #v1 = sinusoid_instant(t_elapsed,0.,freq1,amp1)
-                # v2 = sinusoid_instant(t_elapsed,0.,freq2,amp2)
+                # v1 = sinusoid_instant(t_elapsed,0.,freq1,amp1)
+                #v2 = sinusoid_instant(t_elapsed,0.,freq2,amp2)
                 # v3 = sinusoid_instant(t_elapsed,0.,freq3,amp3)
                 if (t_elapsed > (end_time - 5)):
                     print('slowing')
@@ -750,9 +750,9 @@ class TorqueExample:
                     v2 = 0
                     v3 = 0
 
-                u1 = gq1 + gq1 #+ v1
-                u2 = gq2 + gq2 #+ v2
-                u3 = gq3 + gq3 #+ v3
+                u1 = gq1 #+ gq1 #+ v1
+                u2 = gq2 #+ gq2 #+ v2
+                u3 = gq3 #+ gq3 #+ v3
                 # print('u1',u1)
                 self.base_command.actuators[1].torque_joint = u1#.tolist()
                 # Grav comp is sent to fourth actuator
@@ -775,12 +775,12 @@ class TorqueExample:
                 cyclic_count = cyclic_count + 1
 
                 #store
-                controlHist_temp = controlHist_temp.at[:,[counter]].set(jnp.array([[u1],[u2],[u3]]))
-                q_storage_temp = q_storage_temp.at[:,[counter]].set(q)
-                vel_storage_temp = vel_storage_temp.at[:,[counter]].set(jnp.array([[q1dot],
-                                                                        [q2dot],
-                                                                        [q3dot],
-                                                                        ]))
+                controlHist_temp[:,[counter]]=jnp.array([[u1],[u2],[u3]])
+                q_storage_temp[:,[counter]] = q
+                vel_storage_temp[:,[counter]] = jnp.array([[q1dot],
+                                                        [q2dot],
+                                                        [q3dot],
+                                                        ])
                 counter = counter + 1       #index
 
             # Stats Print
@@ -854,11 +854,16 @@ class TorqueExample:
     def SaveData(self):
         print('Saving Data')
         l = jnp.size(self.t)
+
+        qStore = self.q_storage
+        tStore = self.timeStore
+        vStore = self.vel_storage
+        uStore = self.controlHist
         
         details = ['Saved Data from Physical Implementation! This file has double grav comp so the robot arm swings to a vertical position. Trying to optimise code for refresh rate']
         values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
         header = ['Time', 'State History']
-        with open('/root/FYP/Kinova/examples/108-Gen3_torque_control/data/candlestick_nomove', 'w', newline='') as f:
+        with open('/root/FYP/Kinova/examples/108-Gen3_torque_control/data/freeswingtest', 'w', newline='') as f:
 
             writer = csv.writer(f)
             # writer.writerow(simtype)
@@ -868,20 +873,20 @@ class TorqueExample:
 
             # writer.writerow(['Time', t])
             for i in range(l):
-                timestamp = self.timeStore.at[i].get()           #time
-                q1 = self.q_storage.at[0,i].get()               #postion
-                q2 = self.q_storage.at[1,i].get()
-                q3 = self.q_storage.at[2,i].get()
-                q4 = self.q_storage.at[3,i].get()
-                q5 = self.q_storage.at[4,i].get()
-                q6 = self.q_storage.at[5,i].get()
-                q7 = self.q_storage.at[6,i].get()
-                qdot1 = self.vel_storage.at[0,i].get()               #FOR MOMENTUM LATER
-                qdot2 = self.vel_storage.at[1,i].get()
-                qdot3 = self.vel_storage.at[2,i].get()
-                v1 = self.controlHist.at[0,i].get()       #control values
-                v2 = self.controlHist.at[1,i].get() 
-                v3 = self.controlHist.at[2,i].get() 
+                timestamp = tStore[i]           #time
+                q1 = qStore[0,i]               #postion
+                q2 = qStore[1,i]
+                q3 = qStore[2,i]
+                q4 = qStore[3,i]
+                q5 = qStore[4,i]
+                q6 = qStore[5,i]
+                q7 = qStore[6,i]
+                qdot1 = vStore[0,i]               #FOR MOMENTUM LATER
+                qdot2 = vStore[1,i]
+                qdot3 = vStore[2,i]
+                v1 = uStore[0,i]       #control values
+                v2 = uStore[1,i] 
+                v3 = uStore[2,i] 
                 data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,q4,q5,q6,q7,qdot1,qdot2,qdot3, v1,v2,v3]
                 
                 writer.writerow(data)
@@ -934,8 +939,8 @@ def main():
 
             example = TorqueExample(router, router_real_time)
             
-            args.cyclic_time = 0.005
-            args.duration = 20
+            # args.cyclic_time = 0.005
+            args.duration = 40
             example.InitStorage(args.cyclic_time, args.duration)
             success = example.InitCyclic(args.cyclic_time, args.duration, args.print_stats)
 

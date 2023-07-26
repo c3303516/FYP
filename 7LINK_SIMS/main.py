@@ -788,7 +788,7 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = 0.
+q0_1 = pi/2.
 q0_2 = 0.
 q0_3 = 0.
 
@@ -857,27 +857,35 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 (n,hold) = q_0.shape
 
 #Initialise Simulation Parameters
-dt = 0.005
+dt = 0.001
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
-T = 2.
+T = 0.3
 
-controlActive = 1     #CONTROL ACTIONS
+controlActive = 0     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
 alpha = 0.1
-Kp = 20.*jnp.eye(n)
+Kp = 20.*jnp.eye(n)       #saved tunings
 Kd = 1.*jnp.eye(n)
-ContRate = 200. #Hz: Controller refresh rate
+# Kp = 50.*jnp.eye(n)
+# Kd = 5.*jnp.eye(n)
+ContRate = 500. #Hz: Controller refresh rate
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
-timeConUpdate = -0.005     #this forces an initial update at t = 0s
+timeConUpdate = -dt_con     #this forces an initial update at t = 0s
 v = jnp.zeros((3,1))
 Hcon = 0
 
 #Define Friction
 # D = jnp.zeros((3,3))
-D = 1.*jnp.eye(n)          #check this imple
+# D = 1.*jnp.eye(n)          #check this implentation
+D = jnp.array([
+    [10., 0., 0.],
+    [0., 10., 0.],
+    [0., 0., 10.],
+])
+print('D',D)
 # D_obs = jnp.array([5.0465087890625,5.0465087890625,5.079345703125])@jnp.eye(n)
                         #^ as determined from optimisation
 endT = T - dt       #prevent truncaton
@@ -891,9 +899,10 @@ kappa = 6.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
-ObsRate = 200.   #Hz: refresh rate of observer
+ObsRate = 500.   #Hz: refresh rate of observer
 dt_obs = 1/ObsRate
-timeObsUpdate = -dt_obs           #last time observer updated
+# timeObsUpdate = -dt_obs     
+timeObsUpdate = 0.      #last time observer updated
 print('Observer dt',dt_obs)
 Hobs = 0.
 
@@ -904,8 +913,8 @@ origin = jnp.array([[0.6],[0.6]])            #circle origin, or point track. XZ 
 frequency = 0.2
 amplitude = 0.1
 
-# traj = 'point'      #Name Trajectory Function
-traj = 'planar_circle'      #Name Trajectory Function
+traj = 'point'      #Name Trajectory Function
+# traj = 'planar_circle'      #Name Trajectory Function
 # traj = 'sinusoid_x'      #Name Trajectory Function
 
 traj_func = getattr(trajectories,traj)
@@ -1009,7 +1018,7 @@ for k in range(l):
     Cqph = Cqp(phat,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
     Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,p) Matrix.
 
-    Dhat = Tq@D@Tq
+    Dhat = Tq@D@Tq          #dhat is damping estimate. Here Dhat = D
 
     # result = CbSYM(jnp.zeros((3,1)),phat,Tq,dTqinv_block)
 
@@ -1029,6 +1038,7 @@ for k in range(l):
 
     ptilde = phat - p       #observer error for k timestep
     # print('p~',ptilde)
+    print('xp',xp)
 
     if controlActive == 1:
         timeCon = round((time - timeConUpdate),3)
@@ -1044,7 +1054,7 @@ for k in range(l):
             qddotdot = ddq_d.at[:,[k]].get()  
             p_d = Tqinv@qddot                  #as p0 = Mq*qdot, and p = Tq*p0
             
-            # p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
+            p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
             # x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
             # err = jnp.block([[q], [phat]]) - x_d     #define error           now running off phat. THis was p_d before to act only on position error.
             errq = q - q_d.at[:,[k]].get()
@@ -1168,7 +1178,7 @@ controlInfo = ['Control',controlActive,'Grav Comp', gravComp,'Control Rate',Cont
 observerInfo = ['Observer Rate', ObsRate, 'Kappa',kappa]
 trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/comparison_sims_estimatedP_obstest_3', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/test_sims', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

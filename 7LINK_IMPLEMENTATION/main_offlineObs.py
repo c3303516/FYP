@@ -709,13 +709,13 @@ def observerSwitch(q,phi,xp,kappa):
 
 ################ IMPORT REAL DATA ######################
 
-data = pd.read_csv("7LINK_IMPLEMENTATION/data/candlestick_nomove",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
+data = pd.read_csv("7LINK_IMPLEMENTATION/data/freeswing2_v2sin_2",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
 print(data.head())      #prints first 5 rows. tail() prints last 5
 
 data_array = data.to_numpy()
 print('Data Size', jnp.shape(data_array))
-start = 10      #avoid first time step
-end = 500      #this ill be 2000 later
+start = 0      #avoid first time step if == 1
+end = 400      #this ill be 2000 later
 t = data_array[start:end,[1]]
 t = t.astype('float64')
 t = jnp.transpose(t)
@@ -817,9 +817,9 @@ for k in range(l):
 
     Mq_hat, Tq_hat, Tqinv_hat, Jc_hat = massMatrix_holonomic(q_hat,s)
     vel_hat = jnp.array([
-                    [(pi/180.)*vel3Hist.at[0,k].get()],
-                    [(pi/180.)*vel3Hist.at[1,k].get()],
-                    [(pi/180.)*vel3Hist.at[2,k].get()]])
+                    [vel3Hist.at[0,k].get()],
+                    [vel3Hist.at[1,k].get()],
+                    [vel3Hist.at[2,k].get()]])
     
     p0_short = Mq_hat@vel_hat
     p_shorttemp = Tq_hat@p0_short
@@ -868,8 +868,13 @@ substeps = 2
 
 
 #Define Friction
-# D_obs = jnp.array([67.,67.,50])@jnp.eye(3)
-D_obs = 30.*jnp.eye(n) 
+# D_obs = jnp.array([67.,67.,40])@jnp.eye(3)
+D_obs = jnp.array([
+    [67., 0., 0.],
+    [0., 67., 0.],
+    [0., 0., 40.],
+])
+# D_obs = 30.*jnp.eye(n) 
 print('Dobs', D_obs)
 # D_obs = jnp.array([67.12255859375, 67.12255859375, 67.12255859375])@jnp.eye(n)
                         #^ as determined from optimisation. Need to run opt for 3 though. 2nd is assumed same as 1st.

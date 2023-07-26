@@ -603,7 +603,7 @@ def control(x_err,Tq,Cq,Kp,Kd,alpha,gravComp):
 
 ################ IMPORT REAL DATA ######################
 
-data = pd.read_csv("7LINK_IMPLEMENTATION/data/sinusoid_inverted_v1",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
+data = pd.read_csv("7LINK_IMPLEMENTATION/data/sinusoid_inverted_v3",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
 print(data.head())      #prints first 5 rows. tail() prints last 5
 
 data_array = data.to_numpy()
