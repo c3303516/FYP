@@ -251,7 +251,7 @@ def massMatrix_holonomic(q0, s):
     Tqinv = jnp.real(sqrtm(Mq))
     Tq = linalg.solve(Tqinv,jnp.eye(3)) 
 
-    return Mq, Tq, Tqinv, Jc
+    return Mq, Tq, Tqinv
 
     
 

@@ -541,7 +541,7 @@ def ode_dynamics_wrapper(xt,control_input,Damp,const):
                    [xt.at[1,0].get()],
                    [xt.at[2,0].get()]])
 
-    Mqt, Tqt, Tqinvt, Jct = massMatrix_holonomic(qt,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+    Mqt, Tqt, Tqinvt = massMatrix_holonomic(qt,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
     dMdqt = massMatrixJac(qt,const)
     dMdq1t, dMdq2t, dMdq3t = unravel(dMdqt)
 
@@ -654,7 +654,7 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
                     [xo.at[5,0].get()]])
     # xp = phat - phi*q  -- extract q from this with a constant phat?
 
-    Mqo, Tqo, Tqinvo, Jco = massMatrix_holonomic(qo,s) 
+    Mqo, Tqo, Tqinvo = massMatrix_holonomic(qo,s) 
     dMdqo = massMatrixJac(qo,consto)
     dMdq1o, dMdq2o, dMdq3o = unravel(dMdqo)
 
@@ -709,16 +709,23 @@ def observerSwitch(q,phi,xp,kappa):
 
 ################ IMPORT REAL DATA ######################
 
-data = pd.read_csv("7LINK_IMPLEMENTATION/data/freeswing2_v2sin_2",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
+filestring = "7LINK_IMPLEMENTATION/data/freeswing2_v1sin"
+
+data = pd.read_csv(filestring,sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
 print(data.head())      #prints first 5 rows. tail() prints last 5
 
 data_array = data.to_numpy()
 print('Data Size', jnp.shape(data_array))
 start = 0      #avoid first time step if == 1
-end = 400      #this ill be 2000 later
+end = 1500      #this ill be 2000 later
 t = data_array[start:end,[1]]
 t = t.astype('float64')
 t = jnp.transpose(t)
+print('End Time', t.at[:,end].get())
+# print('header', data_array[0:2,:])
+# print('shape t', jnp.shape(t))
+# print(jnp.shape(t.at[0,:].get()))
+# print(fake)
 
 q7HistT = data_array[start:end,3:10]         #only pull out actuators 2, 4, 6
 vel3HistT = data_array[start:end,10:13]
@@ -738,7 +745,7 @@ qHist = q7Hist[[1,3,5],:]         #extract from actuators that move
 q_0 = qHist[:,[0]]
 print('q0',q_0)
 dt = diff_finite(t,t)
-print('dt',dt)
+# print('dt',dt)
 # print(fake)
 
 # q_0 = jnp.transpose(q_initial)
@@ -754,7 +761,7 @@ constants = jnp.array([                 #These are the positions the wrists are 
                     [0],        #assumption that they equal 0 should be fine
                     [0],
                     [0],
-                    [0],])
+                    [0]])
 s.constants = constants         #for holonomic transform
 print('Constants', constants)
 
@@ -778,50 +785,41 @@ l = jnp.size(t)
 pHist = jnp.zeros((n,l))            #this is for momentum from real data
 # p0Hist = jnp.zeros((n,l))            #transformed
 
+
+
 for k in range(l):
-    qtemp = q7Hist.at[:,[k]].get()
-    # Verificaton that 3 link model was sufficient. Difference in p is due to the larger links
-    # q = jnp.array([[qtemp.at[0,0].get()],
-    #                [qtemp.at[1,0].get()],
-    #                [qtemp.at[2,0].get()],
-    #                [qtemp.at[3,0].get()],
-    #                [qtemp.at[4,0].get()],
-    #                [qtemp.at[5,0].get()],
-    #                [qtemp.at[6,0].get()]])
-    # q = jnp.array([[0],
-    #                [qtemp.at[1,0].get()],
-    #                [0],
-    #                [qtemp.at[3,0].get()],
-    #                [0],
-    #                [qtemp.at[5,0].get()],
-    #                [0]])
+    # qtemp = q7Hist.at[:,[k]].get()
+    qtemp = qHist.at[:,[k]].get()
+    # print('qtemp', qtemp)
+    # print('new')
+    # print(qHist.at[:,[k]].get())
+    for j in range(3):      #prevent wrap around, now adds 2pi
+        val = qtemp[j]
+        # print('val',val)
+        if val < pi:
+            # print('adjust')
+            qtemp = qtemp.at[j].set(val + 2*pi)
+            # print(qtemp[j])
 
-    # Mq, Tq, Tqinv, Jc = massMatrix(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
-    # vel = jnp.array([[0.],
-    #                 [vel3Hist.at[0,k].get()],
-    #                 [0.],
-    #                 [vel3Hist.at[1,k].get()],
-    #                 [0.],
-    #                 [vel3Hist.at[2,k].get()],
-    #                 [0.]])
-    # print(vel)
-    #for momentum
-    # p0temp = Mq@vel
-    # ptemp = Tq@p0temp
-    # print(p)
-    # p0Hist = p0Hist.at[:,[k]].set(ptemp)
+    qHist = qHist.at[:,[k]].set(qtemp)      #rewrite over data
 
-    q_hat = jnp.array([[qtemp.at[1,0].get()],
-                       [qtemp.at[3,0].get()],
-                       [qtemp.at[5,0].get()]])
+    # print(qHist.at[:,[k]].get())
+    q_hat = qtemp
 
-    Mq_hat, Tq_hat, Tqinv_hat, Jc_hat = massMatrix_holonomic(q_hat,s)
+    # q_hat = jnp.array([[qtemp.at[1,0].get()],
+    #                    [qtemp.at[3,0].get()],
+    #                    [qtemp.at[5,0].get()]])
+
+    Mq_hat, Tq_hat, Tqinv_hat = massMatrix_holonomic(q_hat,s)
     vel_hat = jnp.array([
                     [vel3Hist.at[0,k].get()],
                     [vel3Hist.at[1,k].get()],
                     [vel3Hist.at[2,k].get()]])
     
+    # print('vel', vel_hat)
+    
     p0_short = Mq_hat@vel_hat
+    print('p0_short', p0_short)
     p_shorttemp = Tq_hat@p0_short
 
     pHist = pHist.at[:,[k]].set(p_shorttemp)
@@ -835,7 +833,6 @@ for k in range(l):
     # print('diffMq', difftq)
 
 
-# print(fake)
 print('p0', pHist.at[:,[0]].get())
 xHist = jnp.block([[qHist],[pHist]])
 
@@ -850,7 +847,6 @@ dV_func = jacfwd(Vq,argnums=0)
 
 #compute \barC matrix
 CbSYM = jacfwd(C_SYS,argnums=0)
-
 
 
 ################################## SIMULATION/PLOT############################################
@@ -868,20 +864,25 @@ substeps = 2
 
 
 #Define Friction
-# D_obs = jnp.array([67.,67.,40])@jnp.eye(3)
+# # D_obs = jnp.array([67.,67.,40])@jnp.eye(3)
+# D_obs = jnp.array([
+#     [67., 0., 0.],
+#     [0., 67., 0.],
+#     [0., 0., 40.],
+# ])
 D_obs = jnp.array([
-    [67., 0., 0.],
-    [0., 67., 0.],
-    [0., 0., 40.],
+    [0.1, 0., 0.],
+    [0., 0.1, 0.],
+    [0., 0., 0.1],
 ])
-# D_obs = 30.*jnp.eye(n) 
+D_obs = 0.*jnp.eye(n) 
 print('Dobs', D_obs)
 # D_obs = jnp.array([67.12255859375, 67.12255859375, 67.12255859375])@jnp.eye(n)
                         #^ as determined from optimisation. Need to run opt for 3 though. 2nd is assumed same as 1st.
 
 
 #Define Initial Values
-Mqh0, Tq0, Tq0inv, Jc_hat0 = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+Mqh0, Tq0, Tq0inv =  massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 dMdq0 = massMatrixJac(q_0,constants)
 dMdq10, dMdq20, dMdq30 = unravel(dMdq0)
 dTq0invdq1 = solve_continuous_lyapunov(Tq0inv,dMdq10)
@@ -904,9 +905,10 @@ H0Hist = jnp.zeros(l)
 
 
 #Set Initial Conditions
-kappa = 4.     #low value to test switches
+kappa = 2.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
+phat0 = pHist.at[:,[0]].get()
 xp0 = phat0 - phi*q_0     #inital xp 
 
 
@@ -944,7 +946,7 @@ for k in range(l):
     print('xp', xp)
     phat = xp + phi*q           #find phat for this timestep
 
-    Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+    Mq_hat, Tq, Tqinv = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 
     dMdq = massMatrixJac(q,constants)
     dMdq1, dMdq2, dMdq3 = unravel(dMdq)
@@ -980,14 +982,7 @@ for k in range(l):
     #Tq is needed for momentum transform
     v = controlHist.at[:,[k]].get()     #extract control applied to the robot
     # print('size v', jnp.shape(v))
-    print('v',v)        #v = G^-1(q)@v, as Tqinv is G^-1(q) from observer paper. Is not here as not multiplied by G(q) in observer dynamics
-
-    # x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
-    #                     [x.at[1,0].get()],
-    #                     [x.at[2,0].get()],
-    #                     [xp.at[0,0].get()],
-    #                     [xp.at[1,0].get()],
-    #                     [xp.at[2,0].get()]])
+    # print('v',v)        #v = G^-1(q)@v, as Tqinv is G^-1(q) from observer paper. Is not here as not multiplied by G(q) in observer dynamics
 
     obs_args = (phat,phi,v,D_obs,constants)
     
@@ -1042,20 +1037,24 @@ for k in range(l):
 ############### outputting to csv file#####################
 # ############### outputting to csv file#####################
 # details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
-details = ['Running test for offline observer']
+details = ['Running test for offline observer. Same file, just adjusting the wrap around now. Starting at the initial momentum. Add a little damping to see whats up']
+file = [filestring]
 # controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_IMPLEMENTATION/data/offlineProcessing', 'w', newline='') as f:
+
+t2 = t.at[0,:].get()        #to prevent the [] in the data
+with open('/root/FYP/7LINK_IMPLEMENTATION/data/offlineProcessing_2_unwraplong3', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
     writer.writerow(details)
+    writer.writerow(filestring)
     # writer.writerow(controlConstants)
     writer.writerow(header)
 
     # writer.writerow(['Time', t])
     for i in range(l):
-        timestamp = t.at[i].get()               #time
+        timestamp = t2.at[i].get()               #time
         q1 = xHist.at[0,i].get()                #postion
         q2 = xHist.at[1,i].get()
         q3 = xHist.at[2,i].get()
@@ -1077,7 +1076,10 @@ with open('/root/FYP/7LINK_IMPLEMENTATION/data/offlineProcessing', 'w', newline=
         xp2 = xpHist.at[1,i].get()
         xp3 = xpHist.at[2,i].get()
         sc = switchHist.at[i].get()    
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,ph1,ph2,ph3,ph,Hobs,sc,xp1,xp2,xp3,v1,v2,v3]
+        vel1 = vel3Hist.at[0,i].get()
+        vel2 = vel3Hist.at[1,i].get()
+        vel3 = vel3Hist.at[2,i].get()
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,ph1,ph2,ph3,ph,Hobs,sc,xp1,xp2,xp3,v1,v2,v3,vel1,vel2,vel3]
         
         writer.writerow(data)
 

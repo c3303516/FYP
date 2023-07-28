@@ -788,7 +788,7 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = pi/2.
+q0_1 = 0.
 q0_2 = 0.
 q0_3 = 0.
 
@@ -857,12 +857,12 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 (n,hold) = q_0.shape
 
 #Initialise Simulation Parameters
-dt = 0.001
+dt = 0.005
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
 T = 0.3
 
-controlActive = 0     #CONTROL ACTIONS
+controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
 alpha = 0.1
@@ -870,7 +870,7 @@ Kp = 20.*jnp.eye(n)       #saved tunings
 Kd = 1.*jnp.eye(n)
 # Kp = 50.*jnp.eye(n)
 # Kd = 5.*jnp.eye(n)
-ContRate = 500. #Hz: Controller refresh rate
+ContRate = 200. #Hz: Controller refresh rate
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
 timeConUpdate = -dt_con     #this forces an initial update at t = 0s
@@ -881,10 +881,11 @@ Hcon = 0
 # D = jnp.zeros((3,3))
 # D = 1.*jnp.eye(n)          #check this implentation
 D = jnp.array([
-    [10., 0., 0.],
-    [0., 10., 0.],
-    [0., 0., 10.],
+    [1., 0., 0.],
+    [0., 1., 0.],
+    [0., 0., 1.],
 ])
+
 print('D',D)
 # D_obs = jnp.array([5.0465087890625,5.0465087890625,5.079345703125])@jnp.eye(n)
                         #^ as determined from optimisation
@@ -899,7 +900,7 @@ kappa = 6.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
-ObsRate = 500.   #Hz: refresh rate of observer
+ObsRate = 200.   #Hz: refresh rate of observer
 dt_obs = 1/ObsRate
 # timeObsUpdate = -dt_obs     
 timeObsUpdate = 0.      #last time observer updated
@@ -1076,9 +1077,9 @@ for k in range(l):
             dTiqdot_dq3 = dTqinvdq3@qddot
 
             dp_d_dq = jnp.block([dTiqdot_dq1,dTiqdot_dq2,dTiqdot_dq3])      #this is from product rule
+            D_con = Dhat        #holdover if system updates and controller doesn't
 
-
-            v = -(Cqph - Dhat)@p_d + dp_d_dq@Tq@phat + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
+            v = -(Cqph - D_con)@p_d + dp_d_dq@Tq@phat + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
             # print('v',v)
 
     else:
