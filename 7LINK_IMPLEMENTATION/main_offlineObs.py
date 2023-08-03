@@ -645,13 +645,13 @@ def observer_dynamics(xp,q,phi,u,Cq_phat,D,dVq,Tq):
 #This function allows the observer dynamics to be integrated with the RK4 function. Everything as a function of q
 
 #Try and implement this again. Joel has everything as a function of q and ph, which is what is needed.
-def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
-    qo = jnp.array([[xo.at[0,0].get()],   #unpack states
-                   [xo.at[1,0].get()],
-                   [xo.at[2,0].get()]])
-    xpo = jnp.array([[xo.at[3,0].get()],
-                    [xo.at[4,0].get()],
-                    [xo.at[5,0].get()]])
+def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto, qo):
+    # qo = jnp.array([[xo.at[0,0].get()],   #unpack states
+    #                [xo.at[1,0].get()],
+    #                [xo.at[2,0].get()]])
+    xpo = jnp.array([[xo.at[0,0].get()],
+                     [xo.at[1,0].get()],
+                     [xo.at[2,0].get()]])
     # xp = phat - phi*q  -- extract q from this with a constant phat?
 
     Mqo, Tqo, Tqinvo = massMatrix_holonomic(qo,s) 
@@ -675,7 +675,8 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
 
     dxp = observer_dynamics(xpo,qo,phio,cntrl,Cqo,dampo,dVdqo,Tqo)
     # print('dxp',dxp)
-    xpo_dot = jnp.block([[jnp.zeros((3,1))],[dxp]])
+    # xpo_dot = jnp.block([[jnp.zeros((3,1))],[dxp]])
+    xpo_dot = dxp
     # print('xpodot', xpo_dot)
     return xpo_dot
 
@@ -717,7 +718,7 @@ print(data.head())      #prints first 5 rows. tail() prints last 5
 data_array = data.to_numpy()
 print('Data Size', jnp.shape(data_array))
 start = 0      #avoid first time step if == 1
-end = 1500      #this ill be 2000 later
+end = 500      #this ill be 1500 later
 t = data_array[start:end,[1]]
 t = t.astype('float64')
 t = jnp.transpose(t)
@@ -855,7 +856,7 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 
 #Initialise Simulation Parameters
 # dt = 0.005
-substeps = 2
+substeps = 3
 # dt_sub = dt/substeps      #no longer doing substeps
 # T = 10.
 
@@ -984,23 +985,30 @@ for k in range(l):
     # print('size v', jnp.shape(v))
     # print('v',v)        #v = G^-1(q)@v, as Tqinv is G^-1(q) from observer paper. Is not here as not multiplied by G(q) in observer dynamics
 
-    obs_args = (phat,phi,v,D_obs,constants)
+    obs_args = (phat,phi,v,D_obs,constants,q)
     
-    # dt_sub = dt_instant/substeps
+    dt_sub = dt_instant/substeps
     # print('dtsub', dt_sub)
-    # for i in range(substeps):
-    x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
-                [x.at[1,0].get()],
-                [x.at[2,0].get()],
-                [xp.at[0,0].get()],
-                [xp.at[1,0].get()],
-                [xp.at[2,0].get()]])
-        # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
-    xp_update = rk4(x_obs,ode_observer_wrapper,dt_instant,*obs_args)          #call rk4 solver to update ode
-    xp_k  = jnp.array([[xp_update.at[3,0].get()],
-                        [xp_update.at[4,0].get()],
-                        [xp_update.at[5,0].get()]])
-    # xp = xp_k
+    for i in range(substeps):
+    # x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
+    #             [x.at[1,0].get()],
+    #             [x.at[2,0].get()],
+    #             [xp.at[0,0].get()],
+    #             [xp.at[1,0].get()],
+    #             [xp.at[2,0].get()]])
+        x_obs = jnp.array([             #building state vector. Now only takes in xp, q is locked argument
+                    [xp.at[0,0].get()],
+                    [xp.at[1,0].get()],
+                    [xp.at[2,0].get()]])
+            # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
+        xp_update = rk4(x_obs,ode_observer_wrapper,dt_instant,*obs_args)          #call rk4 solver to update ode
+        # xp_k  = jnp.array([[xp_update.at[3,0].get()],
+        #                     [xp_update.at[4,0].get()],
+        #                     [xp_update.at[5,0].get()]])
+        xp_k  = jnp.array([[xp_update.at[0,0].get()],
+                            [xp_update.at[1,0].get()],
+                            [xp_update.at[2,0].get()]])
+        xp = xp_k
     
 
 
@@ -1037,13 +1045,13 @@ for k in range(l):
 ############### outputting to csv file#####################
 # ############### outputting to csv file#####################
 # details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
-details = ['Running test for offline observer. Same file, just adjusting the wrap around now. Starting at the initial momentum. Add a little damping to see whats up']
+details = ['Running test for offline observer. Same file, just adjusting the wrap around now. Starting at the initial momentum. Adjusted RK4 method, substeps']
 file = [filestring]
 # controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha]
 header = ['Time', 'State History']
 
 t2 = t.at[0,:].get()        #to prevent the [] in the data
-with open('/root/FYP/7LINK_IMPLEMENTATION/data/offlineProcessing_2_unwraplong3', 'w', newline='') as f:
+with open('/root/FYP/7LINK_IMPLEMENTATION/data/offlineProcessing_rk43', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

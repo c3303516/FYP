@@ -4,6 +4,7 @@ config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
+import numpy as np
 from effectorFKM import endEffector
 from massMatrix_holonomic import massMatrix_holonomic
 from dynamics_momentumTransform import dynamics_Transform
@@ -731,8 +732,8 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
                    [xo.at[1,0].get()],
                    [xo.at[2,0].get()]])
     xpo = jnp.array([[xo.at[3,0].get()],
-                    [xo.at[4,0].get()],
-                    [xo.at[5,0].get()]])
+                     [xo.at[4,0].get()],
+                     [xo.at[5,0].get()]])
     # xp = phat - phi*q  -- extract q from this with a constant phat?
 
     Mqo, Tqo, Tqinvo, Jco = massMatrix_holonomic(qo,s) 
@@ -757,6 +758,7 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
     dxp = observer_dynamics(xpo,qo,phio,cntrl,Cqo,dampo,dVdqo,Tqo)
     # print('dxp',dxp)
     xpo_dot = jnp.block([[jnp.zeros((3,1))],[dxp]])
+    # xpo_dot = dxp
     # print('xpodot', xpo_dot)
     return xpo_dot
 
@@ -788,7 +790,7 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 
 #INITIAL VALUES
-q0_1 = 0.
+q0_1 = pi/4.
 q0_2 = 0.
 q0_3 = 0.
 
@@ -860,7 +862,7 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 dt = 0.005
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
-T = 0.3
+T = 3.
 
 controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
@@ -980,6 +982,7 @@ phatHist = phatHist.at[:,[0]].set(phat0)
 xpHist = xpHist.at[:,[0]].set(xp0)
 # controlHist = control.at[:,[0]].set(v_)      #controlling 3 states
 
+sigma = 0.5*(pi/180.)     #noise standad deviation
 
 print('SIMULATION LOOP STARTED')
 
@@ -990,6 +993,9 @@ for k in range(l):
     print('Time',time)
 
     x = xHist.at[:,[k]].get()
+
+    
+    ## ADD NOISE TO THE POSITION MEASUREMENT
     q = jnp.array([[x.at[0,0].get()],
                    [x.at[1,0].get()],
                    [x.at[2,0].get()]])
@@ -997,6 +1003,9 @@ for k in range(l):
                    [x.at[4,0].get()],
                    [x.at[5,0].get()]])
     # print(q,p)
+    # q_noise = sigma*np.random.randn(3,1)
+    # print('q_noise',q_noise)
+    # q_measure = q + q_noise
 
     xp = xpHist.at[:,[k]].get()
     phat = xp + phi*q           #find phat for this timestep
@@ -1039,7 +1048,7 @@ for k in range(l):
 
     ptilde = phat - p       #observer error for k timestep
     # print('p~',ptilde)
-    print('xp',xp)
+    # print('xp',xp)
 
     if controlActive == 1:
         timeCon = round((time - timeConUpdate),3)
@@ -1084,6 +1093,8 @@ for k in range(l):
 
     else:
         v = jnp.zeros((3,1))
+        # dVdq = dV_func(q_measure,constants)
+        # v = 2*Tq@dVdq       #turn off control and set free swing
 
 
     #OBSERVER ODE SOLVE 
@@ -1093,16 +1104,17 @@ for k in range(l):
         timeObsUpdate = time
         print('Observer Updating')
         print('Time Elapsed', timeObs)
-        x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
-                          [x.at[1,0].get()],
-                          [x.at[2,0].get()],
+        x_obs = jnp.array([
+                          [q.at[0,0].get()],       #build state vector for observer
+                          [q.at[1,0].get()],
+                          [q.at[2,0].get()],
                           [xp.at[0,0].get()],
                           [xp.at[1,0].get()],
                           [xp.at[2,0].get()]])
 
         Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
         # print('Time Elapsed', timeObs)
-        obs_args = (phat,phi,v,D,constants)
+        obs_args = (phat,phi,v,D,constants)#,q_measure)       #sending noise measurement to obs
                 # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
         xp_update = rk4(x_obs,ode_observer_wrapper,dt_obs,*obs_args)          #call rk4 solver to update ode
         # print('xp_update', xp_update)
@@ -1110,8 +1122,11 @@ for k in range(l):
         # xp_update = rk4(x_obs,observer_dynamics,dt_obs,*obs_args)
         # xp_step = jnp.zeros((3,1))       #just put this here to test controller works
         xp_k  = jnp.array([[xp_update.at[3,0].get()],
-                          [xp_update.at[4,0].get()],
-                          [xp_update.at[5,0].get()]])
+                            [xp_update.at[4,0].get()],
+                            [xp_update.at[5,0].get()]])
+        # xp_k  = jnp.array([[xp_update.at[0,0].get()],
+        #                     [xp_update.at[1,0].get()],
+        #                     [xp_update.at[2,0].get()]])
 
     else:
         xp_k = xp           #hold xp value from previous iteration
@@ -1173,13 +1188,13 @@ print(controlHist)
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
-details = ['Simulations to compare control when given real or estimated momentum. This is estimated, and forces controller and observer update immediately']
+details = ['controller and observer update immediately. Point Tracking to showcase control. q is in observer rk4']
 simInfo = ['dT', dt, 'Substep Number', substeps]
 controlInfo = ['Control',controlActive,'Grav Comp', gravComp,'Control Rate',ContRate,'Kp',Kp,'Kd',Kd,'alpha',alpha]
-observerInfo = ['Observer Rate', ObsRate, 'Kappa',kappa]
+observerInfo = ['Observer Rate', ObsRate, 'Kappa',kappa,'sigma',sigma]
 trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/test_sims', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/sims_point_estimatedP', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

@@ -4,6 +4,7 @@ config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
+import numpy as np
 from effectorFKM import endEffector
 from massMatrix_holonomic import massMatrix_holonomic
 from dynamics_momentumTransform import dynamics_Transform
@@ -16,16 +17,9 @@ from jax.scipy.linalg import sqrtm
 from scipy.optimize import least_squares
 from functools import partial
 from gravcomp import gq
-from sinusoid import sinusoid
 import sys
 import csv
-
-
-
-##################
-# This code is a test bed for physical control of the arm. Since an offline observer will be run, this does not have the observer working.observer_dynamics
-# This also does not run the controller.
-
+import pandas as pd
 
 class self:
     def __init___(self):
@@ -370,7 +364,7 @@ def MqPrime(q_hat,constants):
         
     return Mprime
 
-def TqiPrime(q_hat,constants):           #used in creating a Tqinv stack for dTinvdq calcs
+def TqiPrime(q_hat,constants):           #used in creating a Tqinv stack for dTinvdq calcs. #Legacy
     Mq = massMatrix_continuous(q_hat,constants)
     A = jnp.array([
         [0.,0.,0.],
@@ -526,98 +520,6 @@ def holonomicConstraint(q_hat, qconstants):
     q_bold = q_bold.at[0].get()         #remove the extra array
     return q_bold
 
-############################# TRACKING PROBLEM ###################################
-
-@partial(jax.jit, static_argnames=['struct'])
-def errorIKM(q, q_last, xestar,struct):
-
-    #q0 is start point. q is iteration to solve for xstar
-    #xstar is currently just positon, no angles
-    #EFFECTOR IKM
-    q2 = q[0]      #make the full q vector
-    q4 = q[1]
-    q6 = q[2]
-    # print('struct',struct)
-    q = jnp.array([     #this is qhat
-        [q2, q4, q6]
-        ])
-
-    q = jnp.transpose(q)
-    qconstants = struct.constants
-    q_bold = qconstants.at[:,0].get()     #constrained variabless
-    # print('constants',q_bold)
-    
-    q1 = q_bold.at[0].get()
-    q3 = q_bold.at[1].get()
-    q5 = q_bold.at[2].get()
-    q7 = q_bold.at[3].get()
-
-    A01 = tranz(struct.l1)@rotx(pi)@rotz(q1)          
-    A12 = rotx(pi/2)@tranz(-struct.d1)@trany(-struct.l2)@rotz(q2)
-    A23 = rotx(-pi/2)@trany(struct.d2)@tranz(-struct.l3)@rotz(q3)
-    A34 = rotx(pi/2)@tranz(-struct.d2)@trany(-struct.l4)@rotz(q4)
-    A45 = rotx(-pi/2)@trany(struct.d2)@tranz(-struct.l5)@rotz(q5)
-    A56 = rotx(pi/2)@trany(-struct.l6)@rotz(q6)
-    A67 = rotx(-pi/2)@tranz(-struct.l7)@rotz(q7)
-    A7E = rotx(pi)@tranz(struct.l8)    
-    AEG = tranz(struct.lGripper)
-
-    A02 = A01@A12
-    A03 = A02@A23
-    A04 = A03@A34
-    A05 = A04@A45
-    A06 = A05@A56
-    A07 = A06@A67
-    A0E = A07@A7E
-    #end effector pose
-    r0E0 = A0E[0:3,[3]]
-
-    pose_weights = jnp.array([1.,1.])
-    sqK = 1000*jnp.diag(pose_weights)                            #weights on x and z error
-    e_pose = jnp.array([r0E0[0]-xestar[0] ,r0E0[2]-xestar[2]] )  #penalised error from xe to xestar
-
-    e_q = q - q_last            #penalises movement from q0
-    q_weights = jnp.array([1.,1.,1.])              #penalises specific joint movement. Currently set to use base joint more
-    sqW = 1*jnp.diag(q_weights)
-
-    sqM = jnp.block([
-        [sqW,               jnp.zeros((3, 2))],
-        [jnp.zeros((2,3)),  sqK              ]
-    ])
-#     s = effectorAnalyticalJacobian(q, param, s);      #this is here for future reference if I want to fix angles
-#     JA = s.JA;
-#     J = [sqW;
-#          sqK*JA];
-
-    e = sqM@jnp.block([[e_q],[e_pose]])
-                       #coudl use jacobian and feed through. might decrease time
-    # print(e)
-    e = e[:,0]           
-    return e
-
-
-def solveIKM(traj,init_guess,params):
-    #solves for displacement only
-    guess = init_guess
-    # print(jnp.shape(guess))
-    m,n = jnp.shape(traj)
-    # print('m,n', m,n)
-    q_d = jnp.zeros((m,n))
-
-    bound = ([s.qlower.at[1].get(),s.qlower.at[3].get(),s.qlower.at[5].get()],[s.qupper.at[1].get(),s.qupper.at[3].get(),s.qupper.at[5].get()])
-
-
-    for i in range(n):
-        point = traj.at[0:3,i].get()
-        # errorIKM(q, q0, xestar,struct):       #function handle for ref
-        q0 = jnp.transpose(jnp.array([guess]))
-        # print(jnp.shape(q0))
-        result = least_squares(errorIKM,guess,bounds=bound,args=(q0,point,s))        #starts guess at guess, and penalised movement from last q_d point
-        guess = result.x
-        q_d = q_d.at[:,i].set(guess)
-        # print(q_d.at[:,i].get())
-
-    return q_d
 
 
 def diff_finite(q_d,t_span):
@@ -641,7 +543,7 @@ def ode_dynamics_wrapper(xt,control_input,Damp,const):
                    [xt.at[1,0].get()],
                    [xt.at[2,0].get()]])
 
-    Mqt, Tqt, Tqinvt, Jct = massMatrix_holonomic(qt,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+    Mqt, Tqt, Tqinvt = massMatrix_holonomic(qt,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
     dMdqt = massMatrixJac(qt,const)
     dMdq1t, dMdq2t, dMdq3t = unravel(dMdqt)
 
@@ -658,22 +560,14 @@ def ode_dynamics_wrapper(xt,control_input,Damp,const):
 
     return xt_dot
 
+###############
+def sinusoid_instant(t,origin,freq,amp):
+    #plane is xz plane.
+    var0 = origin
 
+    var = amp*sin(2*pi*freq*t) + var0       #returns one data point only.
 
-############################ CONTROLLER #############################
-
-@jax.jit
-def control(x_err,Tq,Cq,Kp,Kd,alpha,gravComp):
-    #This control function provides the 'v' input detailed in the paper. This v is added to gravity compensation.
-    q_tilde = x_err.at[0:3].get()
-    p_tilde = x_err.at[3:6].get()
-
-    D_hat = jnp.zeros((3,3))
-    v = alpha*(Cq - D_hat - Kd)@Kp@(q_tilde + alpha*p_tilde) - Tq@Kp@(q_tilde + alpha*p_tilde) - Kd@p_tilde
-    # print(v)
-
-    return v
-
+    return var
 
 ################################# OBSERVER #######################################
 
@@ -728,7 +622,7 @@ def observer_dynamics(xp,q,phi,u,Cq_phat,D,dVq,Tq):
     # xp_dot = (Cq_phat - Dq - phi*Tq)@phat - Tq@dVq + Gq@(u+u0)
     #these dynamics substitue phat = xp + phi*q for better performance with RK4 solve
     # print('ObsdVq',dVq)
-    xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + u      #Gq@(u+u0) = u as control law isn't multiplied by Gq^-1
+    xp_dot = (Cq_phat - Dq - phi*Tq)@(xp + phi*q) - Tq@dVq + Gq@u      #Gq@(u+u0) = u as control law isn't multiplied by Gq^-1
     return  xp_dot
 
 #This function allows the observer dynamics to be integrated with the RK4 function. Everything as a function of q
@@ -739,11 +633,11 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
                    [xo.at[1,0].get()],
                    [xo.at[2,0].get()]])
     xpo = jnp.array([[xo.at[3,0].get()],
-                    [xo.at[4,0].get()],
-                    [xo.at[5,0].get()]])
+                     [xo.at[4,0].get()],
+                     [xo.at[5,0].get()]])
     # xp = phat - phi*q  -- extract q from this with a constant phat?
 
-    Mqo, Tqo, Tqinvo, Jco = massMatrix_holonomic(qo,s) 
+    Mqo, Tqo, Tqinvo = massMatrix_holonomic(qo,s) 
     dMdqo = massMatrixJac(qo,consto)
     dMdq1o, dMdq2o, dMdq3o = unravel(dMdqo)
 
@@ -765,6 +659,7 @@ def ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto):
     dxp = observer_dynamics(xpo,qo,phio,cntrl,Cqo,dampo,dVdqo,Tqo)
     # print('dxp',dxp)
     xpo_dot = jnp.block([[jnp.zeros((3,1))],[dxp]])
+    # xpo_dot = dxp
     # print('xpodot', xpo_dot)
     return xpo_dot
 
@@ -795,16 +690,93 @@ def observerSwitch(q,phi,xp,kappa):
 ######################################## MAIN CODE STARTS HERE #################################
 ######################################## MAIN CODE STARTS HERE #################################
 
+
+
+
+massMatrixJac = jacfwd(MqPrime)
+
+# Mq_print = massMatrix_continuous(q_0,constants)
+# print('Mq', jnp.transpose(holonomicTransform)@Mq_print@holonomicTransform)
+
+# dMdq_print = massMatrixJac(q_0,constants)
+
+# dMdq1, dMdq2, dMdq3 = unravel(dMdq_print)
+
+dV_func = jacfwd(Vq,argnums=0)
+
+#compute \barC matrix
+CbSYM = jacfwd(C_SYS,argnums=0)
+
+
+######################################## EXTRACT REAL DATA#############
+################ IMPORT REAL DATA ######################
+
+filestring = "7LINK_IMPLEMENTATION/data/freeswing2_v1sin"
+
+data = pd.read_csv(filestring,sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
+print(data.head())      #prints first 5 rows. tail() prints last 5
+
+data_array = data.to_numpy()
+print('Data Size', jnp.shape(data_array))
+start = 0      #avoid first time step if == 1
+end = 400      #this ill be 1500 later
+t = data_array[start:end,[1]]
+t = t.astype('float64')
+t = jnp.transpose(t)
+print('End Time', t.at[:,end].get())
+
+q7HistT = data_array[start:end,3:10]         #only pull out actuators 2, 4, 6
+vel3HistT = data_array[start:end,10:13]
+controlHistT = data_array[start:end,13:16]
+q7HistT = q7HistT.astype('float64')
+vel3HistT = vel3HistT.astype('float64')
+controlHistT = controlHistT.astype('float64')
+q7Hist = jnp.transpose(q7HistT)
+vel3Hist = jnp.transpose(vel3HistT) #transpose and adjust to radians
+controlHist = jnp.transpose(controlHistT)
+
+
+qHist = q7Hist[[1,3,5],:]         #extract from actuators that move
+q_0 = qHist[:,[0]]
+print('q0',q_0)
+dt = diff_finite(t,t)
+
+(n,hold) = q_0.shape
+l = jnp.size(t)
+
+################################## SIMULATION/PLOT############################################
+
 #INITIAL VALUES
-q0_1 = pi/2.
+q0_1 = 0.
 q0_2 = 0.
 q0_3 = 0.
 
 q_initial = jnp.array([[q0_1,q0_2,q0_3]])
-p_initial = jnp.array([1.,0.,-0.4])            #This initial momentum is not momentum transformed
-# p_initial = jnp.array([0.,0.,0.])    
+# p_initial = jnp.array([1.,0.,-0.4])            #This initial momentum is not momentum transformed
+p_initial = jnp.array([0.,0.,0.])    
+
+D = jnp.array([
+    [1., 0., 0.],
+    [0., 1., 0.],
+    [0., 0., 1.],
+])
+D = 0.*D
+print('D',D)
 
 
+# OBSERVER PARAMETERS
+kappa = 2.     #low value to test switches
+phi = kappa #phi(0) = k
+phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
+xp0 = phat0 - phi*q_0     #inital xp 
+# ObsRate = 200.   #Hz: refresh rate of observer
+# dt_obs = 1/ObsRate
+# timeObsUpdate = -dt_obs     
+timeObsUpdate = 0.      #last time observer updated
+# print('Observer dt',dt_obs)
+Hobs = 0.
+
+substeps = 1
 
 q_0 = jnp.transpose(q_initial)
 s = self()
@@ -832,85 +804,8 @@ holonomicTransform = jnp.array([
 xe0 = endEffector(q_0,s)
 print('Initial Position', xe0)  #XYP coords.
 
-massMatrixJac = jacfwd(MqPrime)
-
-
-# V = Vq(q_hat,constants)
-# print('V', V)
-dV_func = jacfwd(Vq,argnums=0)
-
-#compute \barC matrix
-CbSYM = jacfwd(C_SYS,argnums=0)
-
-
-################################## SIMULATION/PLOT############################################
-
-# This simulations uses p and q hat
-(n,hold) = q_0.shape
-
-#Initialise Simulation Parameters
-dt = 0.005
-substeps = 1
-# dt_sub = dt/substeps      #no longer doing substeps
-T = 10.
-
-endT = T - dt       #prevent truncaton
-t = jnp.arange(0,T,dt)
-l = jnp.size(t)
-
-controlActive = 1     #CONTROL ACTIONS
-gravComp = 1.       #1 HAS GRAVITY COMP.
-# #Define tuning parameters
-alpha = 0.1
-Kp = 50.*jnp.eye(n)
-Kd = 1.*jnp.eye(n)
-ContRate = 200. #Hz: Controller refresh rate
-dt_con = 1/ContRate
-print('Controller dt',dt_con)
-timeConUpdate = 0.     #this forces an initial update at t = 0s
-v = jnp.zeros((3,1))
-
-#Define the sinusoids for control
-u1 = sinusoid(t,0.,0.5,0.)
-u2 = sinusoid(t,0.,0.5,0.)
-u3 = sinusoid(t,0.,0.5,8.)       #t, median, freq, amplitude
-
-u_block = jnp.block([[u1],[u2],[u3]])
-
-print(u_block)
-
-#Define Friction
-# D = jnp.zeros((3,3))
-D = 1.*jnp.eye(n)          #check this imple
-
-
-
-##################### TRACKING PROBLEM PARAMETERS
-#solve IKM to find q_d.
-origin = jnp.array([[0.6],[0.6]])            #circle origin, or point track. XZ coords.as system is XZ planar
-frequency = 0.2
-amplitude = 0.1
-
-traj = 'point'      #Name Trajectory Function
-# traj = 'planar_circle'      #Name Trajectory Function
-# traj = 'sinusoid_x'      #Name Trajectory Function
-
-traj_func = getattr(trajectories,traj)
-xe = traj_func(t,origin,frequency,amplitude)        #frequency and amplitude aren't used in point tracking , but function asks for these parameters. Probably really messy implementation
-
-q_init_guess = jnp.zeros(3)         #initialise initial IKM Guess
-
-#TRAJECTORY TRACK
-# q_d = solveIKM(xe,q_init_guess,s)      #solve IKM so trajectory is changed to generalised idsplacement coordinates.
-# # print('q_d',q_d)
-# # print('qd shape', jnp.shape(q_d))
-# # print(q_d.at[:,0].get())
-# dq_d = diff_finite(q_d,t)           #velocity
-# ddq_d = diff_finite(dq_d,t)         #acceleration
-
-
 #Define Initial Values
-Mqh0, Tq0, Tq0inv, Jc_hat0 = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+Mqh0, Tq0, Tq0inv = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 dMdq0 = massMatrixJac(q_0,constants)
 dMdq10, dMdq20, dMdq30 = unravel(dMdq0)
 dTq0invdq1 = solve_continuous_lyapunov(Tq0inv,dMdq10)
@@ -918,11 +813,14 @@ dTq0invdq2 = solve_continuous_lyapunov(Tq0inv,dMdq20)
 dTq0invdq3 = solve_continuous_lyapunov(Tq0inv,dMdq30)
 dTqinv0 = jnp.array([dTq0invdq1,dTq0invdq2,dTq0invdq3])
 
-# dTqinv_test = dTi(Tq0inv,dMdq10)
+# p_0 = Tq0@(Mqh0@vel3Hist.at[:,0].get())
 
-# # print('dTqi diff', dTqinv0 - dTqinv_test)
-# print('dTqi diff', dTq0invdq1 - dTqinv_test)
-
+while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
+    phitemp, xptmp = observerSwitch(q_0,phi,xp0,kappa)
+    phi = phitemp
+    xp0 = xptmp
+    print('xp0', xp0)
+    print(phi)
 
 p0 = p_initial@Tq0                  #Transform momentum state. Note that the mutiplication is out of order because p_initial is horizontal.
 print('p0',p0)
@@ -938,21 +836,33 @@ hamHist = jnp.zeros(l)
 kinHist = jnp.zeros(l)
 potHist = jnp.zeros(l)
 H0Hist = jnp.zeros(l)
-controlHist = jnp.zeros((n,l))
+HconHist = jnp.zeros(l)
+xpHist = jnp.zeros((n,l))
+phiHist = jnp.zeros(l)
+phatHist = jnp.zeros((n,l+1))
+switchHist = jnp.zeros(l)
+# controlHist = jnp.zeros((n,l))
 
+#Setting Initial Values
+xHist = xHist.at[:,[0]].set(x0)
+phatHist = phatHist.at[:,[0]].set(phat0)
+xpHist = xpHist.at[:,[0]].set(xp0)
+# controlHist = control.at[:,[0]].set(v_)      #controlling 3 states
 
-# controlHist = control.at[:,[0]].set(v)      #controlling 3 states
-
+sigma = 0.5*(pi/180.)     #noise standad deviation
 
 print('SIMULATION LOOP STARTED')
 
 jnp.set_printoptions(precision=15)
 
 for k in range(l):
-    time = t.at[k].get()
+    time = t.at[:,k].get()
+    dt_instant = dt.at[:,k].get()
     print('Time',time)
-
+    dt_sub = dt_instant/substeps
     x = xHist.at[:,[k]].get()
+
+    ## ADD NOISE TO THE POSITION MEASUREMENT
     q = jnp.array([[x.at[0,0].get()],
                    [x.at[1,0].get()],
                    [x.at[2,0].get()]])
@@ -960,8 +870,14 @@ for k in range(l):
                    [x.at[4,0].get()],
                    [x.at[5,0].get()]])
     # print(q,p)
+    # q_noise = sigma*np.random.randn(3,1)
+    # print('q_noise',q_noise)
+    # q_measure = q + q_noise
 
-    Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
+    xp = xpHist.at[:,[k]].get()
+    phat = xp + phi*q           #find phat for this timestep
+
+    Mq_hat, Tq, Tqinv = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 
     dMdq = massMatrixJac(q,constants)
     dMdq1, dMdq2, dMdq3 = unravel(dMdq)
@@ -975,59 +891,75 @@ for k in range(l):
     dVdq = dV_func(q,constants)
 
     # print(dVdq)
-    Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
 
-    Dhat = Tq@D@Tq
+    # Cqph = Cqp(phat,Tq,dTqinv_block)     #Calculate value of C(q,phat) Matrix.
+    # Cqp_real = Cqp(p,Tq,dTqinv_block)     #Calculate value of C(q,p) Matrix.
 
+    # Dhat = Tq@D@Tq          #dhat is damping estimate. Here Dhat = D
 
+    # result = CbSYM(jnp.zeros((3,1)),phat,Tq,dTqinv_block)
 
-    if controlActive == 1:
-        timeCon = round((time - timeConUpdate),3)
-        if timeCon >= dt_con:    #update controller
-
-            if gravComp == 1:           #this probably should be in the controller update?
-                tau = Tq@dVdq           #tranform into momentum trnasform dynamics
-            else:
-                tau = jnp.zeros((3,1))
-
-
-            print('Controller Updating')
-            # qddot = dq_d.at[:,[k]].get()  
-            # qddotdot = ddq_d.at[:,[k]].get()  
-            # p_d = Tqinv@qddot                  #as p0 = Mq*qdot, and p = Tq*p0
-            
-            # # p_d = jnp.zeros((3,1))                                  #if this is zero, everything is treated as a point track with position updates.
-            # x_d = jnp.block([[q_d.at[:,[k]].get()], [p_d]])
-            # err = jnp.block([[q], [p]]) - x_d     #define error
-            #Find Control Input for current x, xtilde
-            # v_input = control(err,Tq,Cqp,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
-            # v_control = control(err,Tq,Cqp_real,Kp,Kd,alpha,gravComp)
-            timeConUpdate = time
+    # print('Cbar', result)
+    # print('size Cbar', jnp.shape(result))
+    cond = switchCond(phat,kappa,phi,Tq,dTqinv_block)   #check if jump is necessary
+    # print(cond)
+    switchHist = switchHist.at[k].set(cond)
+    if cond <= 0:
+        phiplus, xpplus = observerSwitch(q,phi,xp,kappa)     #switch to xp+,phi+ values
+        phi = phiplus
+        xp = xpplus          #update phi and xp with new values
 
 
-            # dTiqdot_dq1 = dTqinvdq1@qddot               #dp_d/dq = dTinv/dq @ qd_dot
-            # dTiqdot_dq2 = dTqinvdq2@qddot
-            # dTiqdot_dq3 = dTqinvdq3@qddot
+    # phat_plus = xp + phi*q
+    # print('Phat Switch', phat - phat_plus)        #check that the switch doesn't affect phat - it doesn't
 
-            # dp_d_dq = jnp.block([dTiqdot_dq1,dTiqdot_dq2,dTiqdot_dq3])      #this is from product rule
+    ptilde = phat - p       #observer error for k timestep
+    # print('p~',ptilde)
+    # print('xp',xp)
+
+    v = controlHist.at[:,[k]].get()     #extract control applied to the robot
+    
+    # print('v',v)
+    #OBSERVER ODE SOLVE 
+    # timeObs = round((time - timeObsUpdate),3)      #dealing with this float time issue
 
 
-            # v = -(Cqp - Dhat)@p_d + dp_d_dq@Tq@p + Tqinv@qddotdot + tau + v_input          #total control law from equaton 17 now here.
-            v = jnp.array([[u1.at[k].get()],[u2.at[k].get()],[u3.at[k].get()]]) + tau
-            print('v',v)
+    print('Observer Updating')
+    # print('Time Elapsed', timeObs)
+    for i in range(substeps):           #holding q here for substeps might be making things really bad
+        x_obs = jnp.array([
+                            [q.at[0,0].get()],       #build state vector for observer
+                            [q.at[1,0].get()],
+                            [q.at[2,0].get()],
+                            [xp.at[0,0].get()],
+                            [xp.at[1,0].get()],
+                            [xp.at[2,0].get()]])
+        # print('Time Elapsed', timeObs)
+        obs_args = (phat,phi,v,D,constants)#,q_measure)       #sending noise measurement to obs
+                # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
+        xp_update = rk4(x_obs,ode_observer_wrapper,dt_instant,*obs_args)          #call rk4 solver to update ode
+        xp_k  = jnp.array([[xp_update.at[3,0].get()],
+                            [xp_update.at[4,0].get()],
+                            [xp_update.at[5,0].get()]])
+        # xp_k  = jnp.array([[xp_update.at[0,0].get()],
+        #                     [xp_update.at[1,0].get()],
+        #                     [xp_update.at[2,0].get()]])
+        xp = xp_k
+    # else:
+        # xp_k = xp           #hold xp value from previous iteration
 
-    else:
-        v = jnp.zeros((3,1))
+    # xp_k = xp           #while observer isn't working
 
-
+    
+    Hobs = 0.5*(jnp.transpose(ptilde.at[:,0].get())@ptilde.at[:,0].get())
 
     #SYSTEM ODE SOLVE
     print('System Updating')
     args = (v,D,constants)
     x_nextstep = x
-    # for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
-    x_step= rk4(x,ode_dynamics_wrapper,dt,*args)
-    x_nextstep = x_step
+    for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
+        x_step= rk4(x_nextstep,ode_dynamics_wrapper,dt_sub,*args)
+        x_nextstep = x_step
 
 
     x_k = x_nextstep           #extract final values from ODE solve
@@ -1037,21 +969,32 @@ for k in range(l):
         print('NAN found, exiting loop')
         break
 
+    if jnp.isnan(xp_k.any()):
+        print(xp_k)
+        print('NAN found, exiting loop')
+        break
 
 
     #Store Variables for next time step
     xHist = xHist.at[:,[k+1]].set(x_k)            #x for next timestep       
+    xpHist = xpHist.at[:,[k+1]].set(xp_k)
 
-
-    controlHist = controlHist.at[:,[k]].set(v)
+    #store current timestep variables
+    phatHist = phatHist.at[:,[k]].set(phat)
+    #Check Observer dynamics
+    H0Hist = H0Hist.at[k].set(Hobs)
+    print('H obs', Hobs)
+    phiHist = phiHist.at[k].set(phi)
+    # controlHist = controlHist.at[:,[k]].set(v)
     # print('v',v.at[:,0].get())
+    # HconHist = HconHist.at[k].set(Hcon)
 
     kinTemp = 0.5*(jnp.transpose(p.at[:,0].get())@p.at[:,0].get())
     potTemp = Vq(q,constants)
     hamTemp = kinTemp + potTemp   
 
     hamHist = hamHist.at[k].set(hamTemp)
-    kinHist = kinHist.at[k].set(kinTemp)        #CHANGE THIS BACK
+    kinHist = kinHist.at[k].set(kinTemp)     
     potHist = potHist.at[k].set(potTemp)
     # xeHist = xeHist.at[:,k].set(xe)
 
@@ -1065,20 +1008,27 @@ print(controlHist)
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
-details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
-controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha]
+details = ['Testing torques applied to real arm to see if sim converges.']
+simInfo = ['dT', dt, 'Substep Number', substeps]
+# controlInfo = ['Control',controlActive,'Grav Comp', gravComp,'Control Rate',ContRate,'Kp',Kp,'Kd',Kd,'alpha',alpha]
+observerInfo = [ 'Kappa',kappa,'sigma',sigma]
+# trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_IMPLEMENTATION/data/sinusoid_torque_q3', 'w', newline='') as f:
+t2 = t.at[0,:].get()        #to prevent the [] in the data
+with open('/root/FYP/7LINK_IMPLEMENTATION/data/controlHist_test3', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
     writer.writerow(details)
-    writer.writerow(controlConstants)
+    writer.writerow(simInfo)
+    # writer.writerow(controlInfo)
+    writer.writerow(observerInfo)
+    # writer.writerow(trackingInfo)
     writer.writerow(header)
 
     # writer.writerow(['Time', t])
     for i in range(l):
-        timestamp = t.at[i].get()               #time
+        timestamp = t2.at[i].get()               #time
         q1 = xHist.at[0,i].get()                #postion
         q2 = xHist.at[1,i].get()
         q3 = xHist.at[2,i].get()
@@ -1088,10 +1038,24 @@ with open('/root/FYP/7LINK_IMPLEMENTATION/data/sinusoid_torque_q3', 'w', newline
         ham = hamHist.at[i].get()               #energy
         kin = kinHist.at[i].get()
         pot = potHist.at[i].get()
+        # qd1 = q_d.at[0,i].get()          #used to be xe - now qd, as xe can be calculated in matlab
+        # qd2 = q_d.at[1,i].get()                 #Trajectory
+        # qd3 = q_d.at[2,i].get()
+        phat1 = phatHist.at[0,i].get()          #estimated dmomentum
+        phat2 = phatHist.at[1,i].get()
+        phat3 = phatHist.at[2,i].get()
+        Hobs = H0Hist.at[i].get()               #Observer energy
+        ph = phiHist.at[i].get()                #phi
+        xp1 = xpHist.at[0,i].get()              #xp
+        xp2 = xpHist.at[1,i].get()
+        xp3 = xpHist.at[2,i].get()
+        sc = switchHist.at[i].get()             #switch condition
         v1 = controlHist.at[0,i].get()          #control values
         v2 = controlHist.at[1,i].get()
         v3 = controlHist.at[2,i].get()
-        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,v1,v2,v3]
+        # Hc = HconHist.at[k].get()
+        data = ['Time:', timestamp  , 'x:   ', q1,q2,q3,p1,p2,p3,ham,kin,pot,phat1,phat2,phat3,ph, Hobs,sc,xp1,xp2,xp3,v1,v2,v3]
+          # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)
 
