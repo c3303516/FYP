@@ -794,14 +794,15 @@ for k in range(l):
     # print('qtemp', qtemp)
     # print('new')
     # print(qHist.at[:,[k]].get())
-    for j in range(3):      #prevent wrap around, now adds 2pi
+
+
+    for j in range(3):      #prevent wrap around. Negates angles over 180 deg
         val = qtemp[j]
         # print('val',val)
-        if val < pi:
+        if val > pi:
             # print('adjust')
-            qtemp = qtemp.at[j].set(val + 2*pi)
+            qtemp = qtemp.at[j].set(val - 2*pi)
             # print(qtemp[j])
-
     qHist = qHist.at[:,[k]].set(qtemp)      #rewrite over data
 
     # print(qHist.at[:,[k]].get())
@@ -820,7 +821,7 @@ for k in range(l):
     # print('vel', vel_hat)
     
     p0_short = Mq_hat@vel_hat
-    print('p0_short', p0_short)
+    # print('p0_short', p0_short)
     p_shorttemp = Tq_hat@p0_short
 
     pHist = pHist.at[:,[k]].set(p_shorttemp)
@@ -856,7 +857,7 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 
 #Initialise Simulation Parameters
 # dt = 0.005
-substeps = 3
+substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
 # T = 10.
 
@@ -906,12 +907,13 @@ H0Hist = jnp.zeros(l)
 
 
 #Set Initial Conditions
-kappa = 2.     #low value to test switches
+kappa = 4.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 phat0 = pHist.at[:,[0]].get()
 xp0 = phat0 - phi*q_0     #inital xp 
 
+print('q0',q_0)
 
 while switchCond(phat0,kappa,phi,Tq0,dTqinv0) <= 0:         #Find initial phi
     phitemp, xptmp = observerSwitch(q_0,phi,xp0,kappa)
@@ -932,7 +934,8 @@ jnp.set_printoptions(precision=15)
 for k in range(l):
     time = t.at[:,k].get()
     dt_instant = dt.at[:,k].get()
-    print('dt',dt_instant)
+    # print('dt',dt_instant)
+    print('Time',time)
 
     x = xHist.at[:,[k]].get()
     q = jnp.array([[x.at[0,0].get()],
@@ -941,11 +944,12 @@ for k in range(l):
     p = jnp.array([[x.at[3,0].get()],        #This is currently returning p, not p0
                    [x.at[4,0].get()],
                    [x.at[5,0].get()]])
-    print('q',q)
-    print('p',p)
+    # print('q',q)
+    # print('p',p)
     xp = xpHist.at[:,[k]].get()
-    print('xp', xp)
+    # print('xp', xp)
     phat = xp + phi*q           #find phat for this timestep
+    # print('phat',phat)
 
     Mq_hat, Tq, Tqinv = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 
@@ -987,31 +991,29 @@ for k in range(l):
 
     obs_args = (phat,phi,v,D_obs,constants,q)
     
-    dt_sub = dt_instant/substeps
+    # dt_sub = dt_instant/substeps
     # print('dtsub', dt_sub)
-    for i in range(substeps):
+    # for i in range(substeps):
     # x_obs = jnp.array([[x.at[0,0].get()],       #build state vector for observer
     #             [x.at[1,0].get()],
     #             [x.at[2,0].get()],
     #             [xp.at[0,0].get()],
     #             [xp.at[1,0].get()],
     #             [xp.at[2,0].get()]])
-        x_obs = jnp.array([             #building state vector. Now only takes in xp, q is locked argument
-                    [xp.at[0,0].get()],
-                    [xp.at[1,0].get()],
-                    [xp.at[2,0].get()]])
-            # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
-        xp_update = rk4(x_obs,ode_observer_wrapper,dt_instant,*obs_args)          #call rk4 solver to update ode
-        # xp_k  = jnp.array([[xp_update.at[3,0].get()],
-        #                     [xp_update.at[4,0].get()],
-        #                     [xp_update.at[5,0].get()]])
-        xp_k  = jnp.array([[xp_update.at[0,0].get()],
-                            [xp_update.at[1,0].get()],
-                            [xp_update.at[2,0].get()]])
-        xp = xp_k
+    x_obs = jnp.array([             #building state vector. Now only takes in xp, q is locked argument
+                [xp.at[0,0].get()],
+                [xp.at[1,0].get()],
+                [xp.at[2,0].get()]])
+        # ode_observer_wrapper(xo,phato,phio,cntrl,dampo,consto)
+    xp_update = rk4(x_obs,ode_observer_wrapper,dt_instant,*obs_args)          #call rk4 solver to update ode
+    # xp_k  = jnp.array([[xp_update.at[3,0].get()],
+    #                     [xp_update.at[4,0].get()],
+    #                     [xp_update.at[5,0].get()]])
+    xp_k  = jnp.array([[xp_update.at[0,0].get()],
+                        [xp_update.at[1,0].get()],
+                        [xp_update.at[2,0].get()]])
+    xp = xp_k
     
-
-
 
     if jnp.isnan(xp_k.any()):       #check for problems
         print(xp_k)
@@ -1045,18 +1047,21 @@ for k in range(l):
 ############### outputting to csv file#####################
 # ############### outputting to csv file#####################
 # details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
-details = ['Running test for offline observer. Same file, just adjusting the wrap around now. Starting at the initial momentum. Adjusted RK4 method, substeps']
+details = ['Running test for offline observer.THis does not wrap around']
 file = [filestring]
 # controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha]
+
+observerInfo = [ 'Kappa',kappa]
 header = ['Time', 'State History']
 
 t2 = t.at[0,:].get()        #to prevent the [] in the data
-with open('/root/FYP/7LINK_IMPLEMENTATION/data/offlineProcessing_rk43', 'w', newline='') as f:
+with open('/root/FYP/7LINK_IMPLEMENTATION/data/final_offline_v1_3', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
     writer.writerow(details)
     writer.writerow(filestring)
+    writer.writerow(observerInfo)
     # writer.writerow(controlConstants)
     writer.writerow(header)
 

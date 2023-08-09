@@ -654,7 +654,7 @@ print('dV', dV(q_hat,constants))
 s.constants = constants         #for holonomic transform
 dt = 0.001
 substeps = 1
-T = 0.5
+T = 1.
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
 
@@ -726,7 +726,7 @@ print(hamHist)
 #outputting to csv file
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_CONSTRAINED/data/ORGTEST', 'w', newline='') as f:
+with open('/root/FYP/7LINK_CONSTRAINED/data/FINAL_3Link_nontransformed2', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

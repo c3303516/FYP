@@ -765,7 +765,7 @@ print('D',D)
 
 
 # OBSERVER PARAMETERS
-kappa = 2.     #low value to test switches
+kappa = 1.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
@@ -1015,7 +1015,7 @@ observerInfo = [ 'Kappa',kappa,'sigma',sigma]
 # trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
 t2 = t.at[0,:].get()        #to prevent the [] in the data
-with open('/root/FYP/7LINK_IMPLEMENTATION/data/controlHist_test3', 'w', newline='') as f:
+with open('/root/FYP/7LINK_IMPLEMENTATION/data/sim_offline_v1', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

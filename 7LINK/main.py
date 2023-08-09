@@ -659,22 +659,23 @@ def ode_solve(xt,dMdq_block,dVdq, dt, m,gC,contA, s):
 
 ## MAIN CODE STARTS HERE
 
-# q1 = 0.
+q1 = 0.
 # q2 = 0.
-# q3 = 0.
-# q4 = 0.
-# q5 = 0.
-# q6 = 0.
-# q7 = 0.
+q3 = 0.
+q4 = 0.
+q5 = 0.
+q6 = 0.
+q7 = 0.
+q2 =  5.*pi/6.
 
 #HOME POSITION OF BOT
-q1 = 0   
-q2 = 0.261799387799149   
-q3 = 3.141592653589793   
-q4 = 4.014257279586958                   
-q5 = 0   
-q6 = 0.959931088596881   
-q7 = 1.570796326794897
+# q1 = 0   
+# q2 = 0.261799387799149   
+# q3 = 3.141592653589793   
+# q4 = 4.014257279586958                   
+# q5 = 0   
+# q6 = 0.959931088596881   
+# q7 = 1.570796326794897
 
 
 q0 = jnp.array([q1,q2,q3,q4,q5,q6,q7])
@@ -737,8 +738,8 @@ dV = jacfwd(Vq)
 (m,n) = x0.shape
 
 dt = 0.01
-substeps = 2
-T = 0.7
+substeps = 1
+T = 1
 controlActive = 0     #CONTROL
 gravComp = 0.       #1 HAS GRAVITY COMP. Must be a float to maintain precision
 
@@ -817,11 +818,11 @@ for k in range(l):
     
 #outputting to csv file
 #check hamiltonian
-print(hamHist)
+# print(hamHist)
 
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK/data/HomePosition_Ham', 'w', newline='') as f:
+with open('/root/FYP/7LINK/data/FINAL_7Link_100Hz', 'w', newline='') as f:
 
     writer = csv.writer(f)
     writer.writerow(details)
@@ -851,20 +852,20 @@ with open('/root/FYP/7LINK/data/HomePosition_Ham', 'w', newline='') as f:
         # data = ['State',i,':', xHist[k,:]] #xHist.at[k,:].get()]# 'End Effector Pose', xeHist.at[k,:].get()]
         
         writer.writerow(data)
-    header = ['Time', 'Control History']
-    writer.writerow(details)
-    for i in range(l):
-        c1 = controlHist.at[0,i].get()
-        c2 = controlHist.at[1,i].get()
-        c3 = controlHist.at[2,i].get()
-        c4 = controlHist.at[3,i].get()
-        c5 = controlHist.at[4,i].get()
-        c6 = controlHist.at[5,i].get()
-        c7 = controlHist.at[6,i].get()
-        timestamp = t.at[i].get()
-        data = ['Time:', timestamp, 'Control Action:    ', c1,c2,c3,c4,c5,c6,c7]
+    # header = ['Time', 'Control History']
+    # writer.writerow(details)
+    # for i in range(l):
+    #     c1 = controlHist.at[0,i].get()
+    #     c2 = controlHist.at[1,i].get()
+    #     c3 = controlHist.at[2,i].get()
+    #     c4 = controlHist.at[3,i].get()
+    #     c5 = controlHist.at[4,i].get()
+    #     c6 = controlHist.at[5,i].get()
+    #     c7 = controlHist.at[6,i].get()
+    #     timestamp = t.at[i].get()
+    #     data = ['Time:', timestamp, 'Control Action:    ', c1,c2,c3,c4,c5,c6,c7]
 
-        writer.writerow(data)
+    #     writer.writerow(data)
 # print('xHist',xHist)    
 # print('xeHist',xeHist)
 

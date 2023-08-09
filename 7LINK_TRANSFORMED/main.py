@@ -728,7 +728,7 @@ dTqdinvi = TqPrime(q_hat,constants,dMdq_block)
 (m,n) = x0.shape
 
 s.constants = constants         #for holonomic transform
-dt = 0.01
+dt = 0.001
 substeps = 1
 T = 1
 controlActive = 0     #CONTROL
@@ -823,7 +823,7 @@ print(hamHist)
 #outputting to csv file
 details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_CONSTRAINED/data/3LINK_HAM_TRANSFORM__bigstep_grav2', 'w', newline='') as f:
+with open('/root/FYP/7LINK_CONSTRAINED/data/FINAL_3Link_transformed2', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
