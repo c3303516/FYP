@@ -19,6 +19,7 @@ from functools import partial
 from gravcomp import gq
 import sys
 import csv
+import time
 
 class self:
     def __init___(self):
@@ -765,8 +766,12 @@ T = 3.
 controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
-alpha = 0.05
-Kp = 20.*jnp.eye(n)       #saved tunings
+# alpha = 0.005
+# Kp = 1.*jnp.eye(n)       #saved tunings for actual moving bot
+# Kd = 0.05*jnp.eye(n)
+
+alpha = 0.05       #tuning for all sims
+Kp = 20.*jnp.eye(n)       
 Kd = 1.*jnp.eye(n)
 # Kp = 50.*jnp.eye(n)
 # Kd = 5.*jnp.eye(n)
@@ -801,8 +806,8 @@ origin = jnp.array([[0.6],[0.6]])            #circle origin, or point track. XZ 
 frequency = 0.2
 amplitude = 0.1
 
-traj = 'point'      #Name Trajectory Function
-# traj = 'planar_circle'      #Name Trajectory Function
+# traj = 'point'      #Name Trajectory Function
+traj = 'planar_circle'      #Name Trajectory Function
 # traj = 'sinusoid_x'      #Name Trajectory Function
 
 traj_func = getattr(trajectories,traj)
@@ -856,8 +861,8 @@ print('SIMULATION LOOP STARTED')
 jnp.set_printoptions(precision=15)
 
 for k in range(l):
-    time = t.at[k].get()
-    print('Time',time)
+    timesim = t.at[k].get()
+    print('Time',timesim)
 
     x = xHist.at[:,[k]].get()
 
@@ -873,7 +878,9 @@ for k in range(l):
     # q_noise = sigma*np.random.randn(3,1)
     # print('q_noise',q_noise)
     # q_measure = q + q_noise
-
+    print('New Timestep')
+    t1 = time.time()
+    # print(time.time())
     Mq_hat, Tq, Tqinv, Jc_hat = massMatrix_holonomic(q,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 
     dMdq = massMatrixJac(q,constants)
@@ -893,7 +900,7 @@ for k in range(l):
 
 
     if controlActive == 1:
-        timeCon = round((time - timeConUpdate),3)
+        timeCon = round((timesim - timeConUpdate),3)
         if timeCon >= dt_con:    #update controller
 
             if gravComp == 1:           #this probably should be in the controller update?
@@ -916,7 +923,7 @@ for k in range(l):
             #Find Control Input for current x, xtilde
             # v_input = control(err,Tq,Cqph,Kp,Kd,alpha,gravComp)     #uses Cqp with estimated momentum
             v_input = control(err,Tq,Cq,Kp,Kd,alpha,gravComp)
-            timeConUpdate = time
+            timeConUpdate = timesim
 
             Hcon = 0.5*jnp.transpose(errp.at[:,0].get())@errp.at[:,0].get() + 0.5*jnp.transpose(errq.at[:,0].get() + alpha*errp.at[:,0].get())@Kp@(errq.at[:,0].get() + alpha*errp.at[:,0].get())
             print('Hcon',Hcon)
@@ -934,7 +941,11 @@ for k in range(l):
         v = jnp.zeros((3,1))
         # dVdq = dV_func(q_measure,constants)
         # v = 2*Tq@dVdq       #turn off control and set free swing
-
+    
+    # print(time.time())
+    t2 = time.time()
+    # print(t2-t1)
+    print('v',v)
 
     #SYSTEM ODE SOLVE
     print('System Updating')
@@ -985,7 +996,7 @@ simInfo = ['dT', dt, 'Substep Number', substeps]
 controlInfo = ['Control',controlActive,'Grav Comp', gravComp,'Control Rate',ContRate,'Kp',Kp,'Kd',Kd,'alpha',alpha]
 trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_CONTROL/data/controlsim_point_50Hz', 'w', newline='') as f:
+with open('/root/FYP/7LINK_CONTROL/data/controlsim_circ3_50Hz', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

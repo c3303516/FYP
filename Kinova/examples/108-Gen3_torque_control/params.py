@@ -1,4 +1,6 @@
 
+import jax.numpy as jnp
+from jax.numpy import pi,sin,cos,linalg
 
 def robotParams(s):
     s.l1 = 156.4e-3
