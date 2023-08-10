@@ -305,31 +305,31 @@ def massMatrix_continuous(q_hat,qconstants):
 
     M2 = Jc2.T@jnp.block([
         [jnp.multiply(s.m2,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R02.T@I2@R02 ]
+        [jnp.zeros((3,3)),            R01@I2@R01.T ]
     ])@Jc2
     M3 = Jc3.T@jnp.block([
         [jnp.multiply(s.m3,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R03.T@I3@R03 ]
+        [jnp.zeros((3,3)),            R02@I3@R02.T ]
     ])@Jc3
     M4 = Jc4.T@jnp.block([
         [jnp.multiply(s.m4,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R04.T@I4@R04 ]
+        [jnp.zeros((3,3)),            R03@I4@R03.T ]
     ])@Jc4
     M5 = Jc5.T@jnp.block([
         [jnp.multiply(s.m5,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R05.T@I5@R05 ]
+        [jnp.zeros((3,3)),            R04@I5@R04.T ]
     ])@Jc5
     M6 = Jc6.T@jnp.block([
         [jnp.multiply(s.m6,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R06.T@I6@R06 ]
+        [jnp.zeros((3,3)),            R05@I6@R05.T ]
     ])@Jc6
     M7 = Jc7.T@jnp.block([
         [jnp.multiply(s.m7,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R07.T@I7@R07 ]
+        [jnp.zeros((3,3)),            R06@I7@R06.T ]
     ])@Jc7
     M8 = Jc8.T@jnp.block([
         [jnp.multiply(s.m8,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R08.T@I8@R08 ]
+        [jnp.zeros((3,3)),            R07@I8@R07.T ]
     ])@Jc8
 
     Mq = M2 + M3 + M4 + M5 + M6 + M7 + M8# + MG
@@ -859,7 +859,7 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 (n,hold) = q_0.shape
 
 #Initialise Simulation Parameters
-dt = 0.001
+dt = 0.005
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
 T = 3.
@@ -872,7 +872,7 @@ Kp = 20.*jnp.eye(n)       #saved tunings
 Kd = 1*jnp.eye(n)
 # Kp = 50.*jnp.eye(n)
 # Kd = 5.*jnp.eye(n)
-ContRate = 100. #Hz: Controller refresh rate
+ContRate = 200. #Hz: Controller refresh rate
 dt_con = 1/ContRate
 print('Controller dt',dt_con)
 timeConUpdate = -dt_con     #this forces an initial update at t = 0s
@@ -880,15 +880,15 @@ v = jnp.zeros((3,1))
 Hcon = 0
 
 #Define Friction
-# D = jnp.zeros((3,3))
+D = jnp.zeros((3,3))
 # D = 1.*jnp.eye(n)          #check this implentation
-D = jnp.array([
-    [1., 0., 0.],
-    [0., 1., 0.],
-    [0., 0., 1.],
-])
+# D = jnp.array([
+#     [1., 0., 0.],
+#     [0., 1., 0.],
+#     [0., 0., 1.],
+# ])
 
-print('D',D)
+# print('D',D)
 # D_obs = jnp.array([5.0465087890625,5.0465087890625,5.079345703125])@jnp.eye(n)
                         #^ as determined from optimisation
 endT = T - dt       #prevent truncaton
@@ -902,7 +902,7 @@ kappa = 6.     #low value to test switches
 phi = kappa #phi(0) = k
 phat0 = jnp.array([[0.],[0.],[0.]])           #initial momentum estimate
 xp0 = phat0 - phi*q_0     #inital xp 
-ObsRate = 100.   #Hz: refresh rate of observer
+ObsRate = 200.   #Hz: refresh rate of observer
 dt_obs = 1/ObsRate
 # timeObsUpdate = -dt_obs     
 timeObsUpdate = 0.      #last time observer updated
@@ -916,8 +916,8 @@ origin = jnp.array([[0.6],[0.6]])            #circle origin, or point track. XZ 
 frequency = 0.2
 amplitude = 0.1
 
-traj = 'point'      #Name Trajectory Function
-# traj = 'planar_circle'      #Name Trajectory Function
+# traj = 'point'      #Name Trajectory Function
+traj = 'planar_circle'      #Name Trajectory Function
 # traj = 'sinusoid_x'      #Name Trajectory Function
 
 traj_func = getattr(trajectories,traj)
@@ -1094,11 +1094,12 @@ for k in range(l):
     else:
         v = jnp.zeros((3,1))
         # dVdq = dV_func(q_measure,constants)
-        # v = 2*Tq@dVdq       #turn off control and set free swing
+        # v = 2*Tq@dVdq       #turn off control and set free swing upwards
 
 
     #OBSERVER ODE SOLVE 
     timeObs = round((time - timeObsUpdate),3)      #dealing with this float time issue
+    # timeObs = dt_obs/2     #never update
 
     if timeObs >= dt_obs:    #update observer
         timeObsUpdate = time
@@ -1188,13 +1189,13 @@ print(controlHist)
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
-details = ['controller and observer update immediately. Point Tracking to showcase control. q is in observer rk4']
+details = ['controller and observer update immediately. tHIS HAS THE FIXED MASS MATRIX']
 simInfo = ['dT', dt, 'Substep Number', substeps]
 controlInfo = ['Control',controlActive,'Grav Comp', gravComp,'Control Rate',ContRate,'Kp',Kp,'Kd',Kd,'alpha',alpha]
 observerInfo = ['Observer Rate', ObsRate, 'Kappa',kappa,'sigma',sigma]
 trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/sims_point_estimatedP_100Hz', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/FINAL_sims_circ_estimatedP', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

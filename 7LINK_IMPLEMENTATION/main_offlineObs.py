@@ -6,7 +6,7 @@ from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
 from effectorFKM import endEffector
 from massMatrix_holonomic import massMatrix_holonomic
-from massMatrix import massMatrix
+# from massMatrix import massMatrix
 from dynamics_momentumTransform import dynamics_Transform
 from rk4 import rk4
 from params import robotParams
@@ -313,31 +313,31 @@ def massMatrix_continuous(q_hat,qconstants):
 
     M2 = Jc2.T@jnp.block([
         [jnp.multiply(s.m2,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R02.T@I2@R02 ]
+        [jnp.zeros((3,3)),            R01@I2@R01.T ]
     ])@Jc2
     M3 = Jc3.T@jnp.block([
         [jnp.multiply(s.m3,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R03.T@I3@R03 ]
+        [jnp.zeros((3,3)),            R02@I3@R02.T ]
     ])@Jc3
     M4 = Jc4.T@jnp.block([
         [jnp.multiply(s.m4,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R04.T@I4@R04 ]
+        [jnp.zeros((3,3)),            R03@I4@R03.T ]
     ])@Jc4
     M5 = Jc5.T@jnp.block([
         [jnp.multiply(s.m5,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R05.T@I5@R05 ]
+        [jnp.zeros((3,3)),            R04@I5@R04.T ]
     ])@Jc5
     M6 = Jc6.T@jnp.block([
         [jnp.multiply(s.m6,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R06.T@I6@R06 ]
+        [jnp.zeros((3,3)),            R05@I6@R05.T ]
     ])@Jc6
     M7 = Jc7.T@jnp.block([
         [jnp.multiply(s.m7,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R07.T@I7@R07 ]
+        [jnp.zeros((3,3)),            R06@I7@R06.T ]
     ])@Jc7
     M8 = Jc8.T@jnp.block([
         [jnp.multiply(s.m8,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R08.T@I8@R08 ]
+        [jnp.zeros((3,3)),            R07@I8@R07.T ]
     ])@Jc8
 
     Mq = M2 + M3 + M4 + M5 + M6 + M7 + M8# + MG
@@ -1047,7 +1047,7 @@ for k in range(l):
 ############### outputting to csv file#####################
 # ############### outputting to csv file#####################
 # details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
-details = ['Running test for offline observer.THis does not wrap around']
+details = ['Running test for offline observer.THis does not wrap around. This uses the new mass matrix stuff']
 file = [filestring]
 # controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha]
 
@@ -1055,7 +1055,7 @@ observerInfo = [ 'Kappa',kappa]
 header = ['Time', 'State History']
 
 t2 = t.at[0,:].get()        #to prevent the [] in the data
-with open('/root/FYP/7LINK_IMPLEMENTATION/data/final_offline_v1_3', 'w', newline='') as f:
+with open('/root/FYP/7LINK_IMPLEMENTATION/data/final_offline_v1_3_mmtest', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

@@ -201,31 +201,31 @@ def massMatrix_holonomic(q0, s):
 
     M2 = Jc2.T@jnp.block([
         [jnp.multiply(s.m2,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R02.T@I2@R02 ]
+        [jnp.zeros((3,3)),            R01@I2@R01.T ]
     ])@Jc2
     M3 = Jc3.T@jnp.block([
         [jnp.multiply(s.m3,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R03.T@I3@R03 ]
+        [jnp.zeros((3,3)),            R02@I3@R02.T ]
     ])@Jc3
     M4 = Jc4.T@jnp.block([
         [jnp.multiply(s.m4,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R04.T@I4@R04 ]
+        [jnp.zeros((3,3)),            R03@I4@R03.T ]
     ])@Jc4
     M5 = Jc5.T@jnp.block([
         [jnp.multiply(s.m5,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R05.T@I5@R05 ]
+        [jnp.zeros((3,3)),            R04@I5@R04.T ]
     ])@Jc5
     M6 = Jc6.T@jnp.block([
         [jnp.multiply(s.m6,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R06.T@I6@R06 ]
+        [jnp.zeros((3,3)),            R05@I6@R05.T ]
     ])@Jc6
     M7 = Jc7.T@jnp.block([
         [jnp.multiply(s.m7,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R07.T@I7@R07 ]
+        [jnp.zeros((3,3)),            R06@I7@R06.T ]
     ])@Jc7
     M8 = Jc8.T@jnp.block([
         [jnp.multiply(s.m8,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R08.T@I8@R08 ]
+        [jnp.zeros((3,3)),            R07@I8@R07.T ]
     ])@Jc8
 
     Mq7 = M2 + M3 + M4 + M5 + M6 + M7 + M8
