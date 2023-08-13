@@ -7,27 +7,15 @@ from functools import partial
 from jax.scipy.linalg import sqrtm
 
 @partial(jax.jit, static_argnames=['s'])
-def massMatrix_holonomic(q0, s):
-    q4 = q0.at[0].get()      #pass the joint variable to the specific joints   #CHANGE
-    # q4 = q0.at[1].get()
-    # q6 = q0.at[2].get()
+def massMatrix(q0, s):
+    q1 = q0.at[0].get()      #pass the joint variable to the specific joints 
+    q2 = q0.at[1].get()
+    q3 = q0.at[2].get()
+    q4 = q0.at[3].get()
+    q5 = q0.at[4].get()
+    q6 = q0.at[5].get()
+    q7 = q0.at[6].get()
 
-    dFcdq = jnp.array([
-        [0.,0.,0.],
-        [0.,0.,0.],
-        [0.,0.,0.],
-        [0.,0.,0.],
-    ])
-
-    qconstants = s.constants
-    q0_bold = qconstants.at[0].get()     #Create the q's defined by holonomic constraint
-    
-    q1 = q0_bold.at[0].get()                #pass out to joints
-    q3 = q0_bold.at[1].get()
-    q5 = q0_bold.at[2].get()
-    q7 = q0_bold.at[3].get()
-    q6 = q0_bold.at[2].get()
-    q2 = q0_bold.at[3].get()
 
     ## Effector FKM
     A01 = tranz(s.l1)@rotx(pi)@rotz(q1)          
@@ -202,9 +190,9 @@ def massMatrix_holonomic(q0, s):
     IG = s.IG
 
     M2 = Jc2.T@jnp.block([
-            [jnp.multiply(s.m2,jnp.eye(3,3)), jnp.zeros((3,3))],
-            [jnp.zeros((3,3)),            R01@I2@R01.T ]
-        ])@Jc2
+        [jnp.multiply(s.m2,jnp.eye(3,3)), jnp.zeros((3,3))],
+        [jnp.zeros((3,3)),            R01@I2@R01.T ]
+    ])@Jc2
     M3 = Jc3.T@jnp.block([
         [jnp.multiply(s.m3,jnp.eye(3,3)), jnp.zeros((3,3))],
         [jnp.zeros((3,3)),            R02@I3@R02.T ]
@@ -230,31 +218,22 @@ def massMatrix_holonomic(q0, s):
         [jnp.zeros((3,3)),            R07@I8@R07.T ]
     ])@Jc8
 
-    Mq7 = M2 + M3 + M4 + M5 + M6 + M7 + M8
+    Mq = M2 + M3 + M4 + M5 + M6 + M7 + M8
 
     #holonomic contraints
-    # holonomicTransform = jnp.array([
-    #     [0.],
-    #     [0.],
-    #     [0.],
-    #     [1.],
-    #     [0.],
-    #     [0.],
-    #     [0.],
-    # ])
-    holonomicTransform = s.holo
+    holonomicTransform = jnp.array([
+        [0.,0.,0.],
+        [1.,0.,0.],
+        [0.,0.,0.],
+        [0.,1.,0.],
+        [0.,0.,0.],
+        [0.,0.,1.],
+        [0.,0.,0.],
+    ])
 
 
-    Jc8_hat = Jc8@holonomicTransform  #only care about these? not entirely sure if this works
-    Jc = Jc8_hat.at[0:3,:].get()
-    # print(Jc8_hat)
-    # print(stop)
 
-    Mq = jnp.transpose(holonomicTransform)@Mq7@holonomicTransform  #transform needed to produce Mq_hat
-    Tqinv = jnp.real(sqrtm(Mq))
-    Tq = linalg.solve(Tqinv,jnp.eye(1))             #1 because  q being passed in is singular
-
-    return Mq, Tq, Tqinv, Jc
+    return Mq
 
     
 

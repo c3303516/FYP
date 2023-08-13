@@ -862,15 +862,15 @@ CbSYM = jacfwd(C_SYS,argnums=0)
 dt = 0.005
 substeps = 1
 # dt_sub = dt/substeps      #no longer doing substeps
-T = 3.
+T = 5.
 
 controlActive = 1     #CONTROL ACTIONS
 gravComp = 1.       #1 HAS GRAVITY COMP.
 # #Define tuning parameters
-alpha = 0.5
-Kp = 10.*jnp.eye(n)       #saved tunings
+
+alpha = 0.1 # was 0.1 in before
+Kp = 5.*jnp.eye(n)       #saved tunings
 Kd = 0.5*jnp.eye(n)
-# Kp = 50.*jnp.eye(n)
 # Kd = 5.*jnp.eye(n)
 ContRate = 200. #Hz: Controller refresh rate
 dt_con = 1/ContRate
@@ -1195,7 +1195,7 @@ controlInfo = ['Control',controlActive,'Grav Comp', gravComp,'Control Rate',Cont
 observerInfo = ['Observer Rate', ObsRate, 'Kappa',kappa,'sigma',sigma]
 trackingInfo = ['Trajectory Type', traj, 'Origin', origin, 'Freq nad Amplitude',frequency,amplitude]
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_SIMS/data/FINAL_sims_circ_estimatedP', 'w', newline='') as f:
+with open('/root/FYP/7LINK_SIMS/data/ControllerObserver_circ_estimatedP', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

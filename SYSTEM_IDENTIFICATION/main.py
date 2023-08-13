@@ -124,10 +124,10 @@ def massMatrix_continuous(q_hat,qconstants):
     q3 = q_bold.at[1].get()
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
-    q4 = q_bold.at[4].get()
+    q6 = q_bold.at[4].get()
     q2 = q_bold.at[5].get()
 
-    q6 = q_hat.at[0].get()
+    q4 = q_hat.at[0].get()          #CHANGE
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
     # print('q1',q1)
@@ -307,31 +307,31 @@ def massMatrix_continuous(q_hat,qconstants):
 
     M2 = Jc2.T@jnp.block([
         [jnp.multiply(s.m2,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R02.T@I2@R02 ]
+        [jnp.zeros((3,3)),            R01@I2@R01.T ]
     ])@Jc2
     M3 = Jc3.T@jnp.block([
         [jnp.multiply(s.m3,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R03.T@I3@R03 ]
+        [jnp.zeros((3,3)),            R02@I3@R02.T ]
     ])@Jc3
     M4 = Jc4.T@jnp.block([
         [jnp.multiply(s.m4,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R04.T@I4@R04 ]
+        [jnp.zeros((3,3)),            R03@I4@R03.T ]
     ])@Jc4
     M5 = Jc5.T@jnp.block([
         [jnp.multiply(s.m5,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R05.T@I5@R05 ]
+        [jnp.zeros((3,3)),            R04@I5@R04.T ]
     ])@Jc5
     M6 = Jc6.T@jnp.block([
         [jnp.multiply(s.m6,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R06.T@I6@R06 ]
+        [jnp.zeros((3,3)),            R05@I6@R05.T ]
     ])@Jc6
     M7 = Jc7.T@jnp.block([
         [jnp.multiply(s.m7,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R07.T@I7@R07 ]
+        [jnp.zeros((3,3)),            R06@I7@R06.T ]
     ])@Jc7
     M8 = Jc8.T@jnp.block([
         [jnp.multiply(s.m8,jnp.eye(3,3)), jnp.zeros((3,3))],
-        [jnp.zeros((3,3)),            R08.T@I8@R08 ]
+        [jnp.zeros((3,3)),            R07@I8@R07.T ]
     ])@Jc8
 
     Mq = M2 + M3 + M4 + M5 + M6 + M7 + M8# + MG
@@ -343,13 +343,13 @@ def massMatrix_continuous(q_hat,qconstants):
 def MqPrime(q_hat,constants):
 
     Mq = massMatrix_continuous(q_hat,constants)
-    holo = jnp.array([
-        [0.],
-        [0.],
+    holo = jnp.array([      #CHANGE
         [0.],
         [0.],
         [0.],
         [1.],
+        [0.],
+        [0.],
         [0.],
     ])
     
@@ -425,10 +425,10 @@ def Vq(q_hat, qconstants):
     q3 = q_bold.at[1].get()
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
-    q4 = q_bold.at[4].get()
+    q6 = q_bold.at[4].get()
     q2 = q_bold.at[5].get()
 
-    q6 = q_hat.at[0].get()
+    q4 = q_hat.at[0].get()      #CHANGE
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
 
@@ -602,8 +602,8 @@ def control(x_err,Tq,Cq,Kp,Kd,alpha,gravComp):
 # p_initial = jnp.array([0.,0.,0.])    
 
 ################ IMPORT REAL DATA ######################
-
-data = pd.read_csv("7LINK_IMPLEMENTATION/data/sinusoid_inverted_v3",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
+#CHANGE
+data = pd.read_csv("7LINK_IMPLEMENTATION/data/sinusoid_inverted_v2",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
 print(data.head())      #prints first 5 rows. tail() prints last 5
 
 data_array = data.to_numpy()
@@ -628,8 +628,8 @@ controlHist = jnp.transpose(controlHistT)
 # print(jnp.shape(velHist))
 # print(jnp.shape(controlHist))
 
-qHist = q7Hist[[5],:]         #this will only be the actuator we care about.        ############# CHANGE THIS
-velHist = vel3Hist[[2],:]     # vel is 3
+qHist = q7Hist[[3],:]         #this will only be the actuator we care about.        ############# CHANGE THIS
+velHist = vel3Hist[[1],:]     # vel is 3            #CHANGE
 
 print('size qhist', jnp.shape(qHist))
 
@@ -651,16 +651,17 @@ constants = jnp.array([                 #These are the positions the wrists are 
 ])
 s.constants = constants         #for holonomic transform
 
-holonomicTransform = jnp.array([
+holonomicTransform = jnp.array([            #CHANGE
         [0.],
         [0.],         #only actuator we car about? might have to reduce the rows. write this out.
         [0.],
-        [0.],
-        [0.],
         [1.],
+        [0.],
+        [0.],
         [0.],
     ])
 
+s.holo = holonomicTransform
 
 xe0 = endEffector(q_0,s)
 print('Initial Position', xe0)  #XYP coords.
@@ -762,7 +763,7 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
         dt_instant = dt.at[:,k].get()
         print('dt',dt_instant)
 
-        v = controlHist.at[[2],[k]].get()     #extract control applied to the robot, REMEMBER TO CHANGE TO ACTUATOR
+        v = controlHist.at[[1],[k]].get()     #extract control applied to the robot, REMEMBER TO CHANGE TO ACTUATOR #CHANGE
         # print('shape v',jnp.shape(v))
         x = x_sim.at[:,[k]].get()
         # q = jnp.array([[x.at[0,0].get()],
@@ -792,13 +793,13 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
         #SYSTEM ODE SOLVE
         print('System Updating')
         args = (v,D,constants)
-        dt_integration = dt_instant/substeps
+        # dt_integration = dt_instant/substeps
         x_next = x
-        for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
+        # for i in range(substeps):       #the fact this doens't update the arguments might but fucking this up. 
         # print('dt',jnp.shape(dt_instant))
             # print('i',i)
-            x_step= rk4(x_next,ode_dynamics_wrapper,dt_integration,*args)        #constraints need to be made for this.
-            x_next = x_step
+        x_step= rk4(x_next,ode_dynamics_wrapper,dt_instant,*args)        #constraints need to be made for this.
+            # x_next = x_step
 
         x_k = x_step          #extract final values from ODE solve
         # print('size xk',jnp.shape(x_k))
@@ -828,7 +829,7 @@ def optimisationCost(dampP,X,simFunc,xstart,controlHist,t,dt):
 
 # print('sie qhist', jnp.size(qHist))
 args = (qHist,simulation,x0,controlHist,t,dt)
-dampingParamInitial = 30.        
+dampingParamInitial = 10.        
 dampingParamOpt = fmin(optimisationCost,dampingParamInitial,args,disp=True)
 
 print('Damping Param',dampingParamOpt)
@@ -855,7 +856,7 @@ print('Saving Data')
 details = ['Damping Parameter:', dampingParamOpt]
 # values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
 # header = ['Time', 'State History']
-with open('SYSTEM_IDENTIFICATION/data/dampingParameter3', 'w', newline='') as f:
+with open('SYSTEM_IDENTIFICATION/data/dampingParameter2_massmatrixfixed', 'w', newline='') as f:  #CHANGE
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

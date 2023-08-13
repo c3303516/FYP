@@ -6,7 +6,8 @@ from jax.numpy import pi, sin, cos, linalg
 from jax import grad, jacobian, jacfwd
 import numpy as np
 from massMatrix_holonomic import massMatrix_holonomic
-from dynamics_momentumTransform import dynamics_Transform
+# from dynamics_momentumTransform import dynamics_Transform
+from dynamics import dynamics_constrained
 import trajectories
 from rk4 import rk4
 from params import robotParams
@@ -531,16 +532,11 @@ def ode_dynamics_wrapper(xt,control_input,Damp,const):
     dMdqt = massMatrixJac(qt,const)
     dMdq1t, dMdq2t, dMdq3t = unravel(dMdqt)
 
-    dTqidq1t = solve_continuous_lyapunov(Tqinvt,dMdq1t)
-    dTqidq2t = solve_continuous_lyapunov(Tqinvt,dMdq2t)
-    dTqidq3t = solve_continuous_lyapunov(Tqinvt,dMdq3t)
-
-    dTqinvt = jnp.array([dTqidq1t,dTqidq2t,dTqidq3t])
-    # dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
+    dMdq_block = jnp.array([dMdq1t, dMdq2t, dMdq3t])
     dVdqt = dV_func(qt,const)
-    args = (control_input,Damp,Tqt,dTqinvt,dVdqt)
-
-    xt_dot = dynamics_Transform(xt,*args)        #return xdot from dynamics function
+    args = (control_input,Damp,Mqt,dMdq_block,dVdqt)
+    # (x,v,D,Mq,dMdq_values,dVdq)
+    xt_dot = dynamics_constrained(xt,*args)        #return xdot from dynamics function
 
     return xt_dot
 
@@ -623,15 +619,14 @@ substeps = 1
 T = 3.
 
 controlActive = 1     #CONTROL ACTIONS
-gravComp = 1.       #1 HAS GRAVITY COMP.
-Kd = 0.5*jnp.eye(n)
+gravComp = 0.       #1 HAS GRAVITY COMP.
 
 v = jnp.zeros((3,1))
 Hcon = 0
 
 #Define Friction
 D = jnp.zeros((3,3))
-D = 1.*jnp.eye(n)          #check this implentation
+# D = 1.*jnp.eye(n)          #check this implentation
 # D = jnp.array([
 #     [1., 0., 0.],
 #     [0., 1., 0.],
@@ -642,35 +637,13 @@ endT = T - dt       #prevent truncaton
 t = jnp.arange(0,T,dt)
 l = jnp.size(t)
 
-##################### TRACKING PROBLEM PARAMETERS
-#solve IKM to find q_d.
-origin = jnp.array([[0.6],[0.]])            #circle origin, or point track. XZ coords.as system is XZ planar
-frequency = 0.2
-amplitude = 0.1
-
-traj = 'point'      #Name Trajectory Function
-# traj = 'planar_circle'      #Name Trajectory Function
-# traj = 'sinusoid_x'      #Name Trajectory Function
-
-traj_func = getattr(trajectories,traj)
-xe = traj_func(t,origin,frequency,amplitude)        #frequency and amplitude aren't used in point tracking , but function asks for these parameters. Probably really messy implementation
-
-q_init_guess = jnp.zeros(3)         #initialise initial IKM Guess
-
 
 #Define Initial Values
 Mqh0, Tq0, Tq0inv = massMatrix_holonomic(q_0,s)   #Get Mq, Tq and Tqinv for function to get dTqdq
 dMdq0 = massMatrixJac(q_0,constants)
-dMdq10, dMdq20, dMdq30 = unravel(dMdq0)
-dTq0invdq1 = solve_continuous_lyapunov(Tq0inv,dMdq10)
-dTq0invdq2 = solve_continuous_lyapunov(Tq0inv,dMdq20)
-dTq0invdq3 = solve_continuous_lyapunov(Tq0inv,dMdq30)
-dTqinv0 = jnp.array([dTq0invdq1,dTq0invdq2,dTq0invdq3])
-
-
-p0 = p_initial@Tq0                  #Transform momentum state. Note that the mutiplication is out of order because p_initial is horizontal.
-print('p0',p0)
-x0 = jnp.block([[q_initial,p0]])
+           #Transform momentum state. Note that the mutiplication is out of order because p_initial is horizontal.
+print('p0',p_initial)
+x0 = jnp.block([[q_initial,p_initial]])
 x0 = jnp.transpose(x0)
 print('Initial States', x0)
 
@@ -715,17 +688,11 @@ for k in range(l):
     dMdq = massMatrixJac(q,constants)
     dMdq1, dMdq2, dMdq3 = unravel(dMdq)
 
-    dTqinvdq1 = solve_continuous_lyapunov(Tqinv,dMdq1)
-    dTqinvdq2 = solve_continuous_lyapunov(Tqinv,dMdq2)
-    dTqinvdq3 = solve_continuous_lyapunov(Tqinv,dMdq3)
-
-    dTqinv_block = jnp.array([dTqinvdq1,dTqinvdq2,dTqinvdq3])
-    # dMdq_block = jnp.array([dMdq1, dMdq2, dMdq3])
     dVdq = dV_func(q,constants)
 
     if controlActive == 1:
             if gravComp == 1:           #this probably should be in the controller update?
-                v = Tq@dVdq           #tranform into momentum trnasform dynamics
+                v = dVdq           #tranform into momentum trnasform dynamics
             else:
                 v = jnp.zeros((3,1))
     else:
@@ -756,9 +723,8 @@ for k in range(l):
     #store current timestep variables
 
     controlHist = controlHist.at[:,[k]].set(v)
-    HconHist = HconHist.at[k].set(Hcon)
-
-    kinTemp = 0.5*(jnp.transpose(p.at[:,0].get())@p.at[:,0].get())
+    # HconHist = HconHist.at[k].set(Hcon)
+    kinTemp = 0.5*(jnp.transpose(p.at[:,0].get())@(linalg.solve(Mq_hat,p.at[:,0].get())))
     potTemp = Vq(q,constants)
     hamTemp = kinTemp + potTemp   
 
@@ -772,13 +738,13 @@ print('FINISHED')
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
 ############### outputting to csv file#####################
-details = ['THIS HAS THE FIXED MASS MATRIX. This is the transformed dynamics for grav comp and freeswing']
+details = ['THIS HAS THE FIXED MASS MATRIX. This is the NON - transformed dynamics for grav comp and freeswing']
 simInfo = ['dT', dt, 'Substep Number', substeps]
 controlInfo = ['Gravcomp', gravComp,' Rest of theControl is not implemented here.']
 observerInfo = ['Observer is not operation. Ignore all observer paramerters here']
 trackingInfo = ['No trajectory']
 header = ['Time', 'State History']
-with open('/root/FYP/7LINK_TRANSFORMED/data/freeswing', 'w', newline='') as f:
+with open('/root/FYP/7LINK_CONSTRAINED/data/freeswing_initialp', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

@@ -18,7 +18,7 @@ from scipy.integrate import RK45
 
 # @partial(jax.jit, static_argnames=['s'])
 @jax.jit
-def dynamics_test(x,v,D,Mq,dMdq_values,dVdq): #need to put in constants
+def dynamics_constrained(x,v,D,Mq,dMdq_values,dVdq): #need to put in constants
 
     q2 = x.at[0,0].get()      #make the full q vector
     q4 = x.at[1,0].get()
@@ -34,7 +34,7 @@ def dynamics_test(x,v,D,Mq,dMdq_values,dVdq): #need to put in constants
         [p2],[p4],[p6]
         ])
 
-
+    # print('p0',p0)
     dVdq1 = dVdq.at[0].get()
     dVdq2 = dVdq.at[1].get()
     dVdq3 = dVdq.at[2].get()
@@ -57,40 +57,41 @@ def dynamics_test(x,v,D,Mq,dMdq_values,dVdq): #need to put in constants
 
     # print(dMinvdq1)
     # print('dVdq', dVdq)
-    # print(jnp.array([[dVdq1], [dVdq2], [dVdq3]]))
+    # printVdq1], [dVdq2
+    Hatemp1 = jnp.transpose(p0)@dMinvdq1@p0
+    Hatemp2 = jnp.transpose(p0)@dMinvdq2@p0
+    Hatemp3 = jnp.transpose(p0)@dMinvdq3@p0
+    # print('Htemp', Htemp2)
 
-    Htemp1 = jnp.transpose(p0)@dMinvdq1@p0
-    Htemp2 = jnp.transpose(p0)@dMinvdq2@p0
-    Htemp3 = jnp.transpose(p0)@dMinvdq3@p0
+    Htemp1 = Hatemp1.at[0].get()
+    Htemp2 = Hatemp2.at[0].get()
+    Htemp3 = Hatemp3.at[0].get()
 
     # dHdq = 0.5*(jnp.array([       #how i used to do it. fixing p0 array stuff mess this up
     #     [jnp.transpose(p0)@dMinvdq1@p0],
     #     [jnp.transpose(p0)@dMinvdq2@p0],
     #     [jnp.transpose(p0)@dMinvdq3@p0],
     # ])) + jnp.array([[dVdq1], [dVdq2], [dVdq3]])    # addition now works and gives same shape, however numerical values are incorrect
-
+    # print('temp',Htemp2)
     dHdq = 0.5*jnp.array([
-        [Htemp1.at[0,0].get()],
-        [Htemp2.at[0,0].get()],
-        [Htemp3.at[0,0].get()],
-    ]) + jnp.array([[dVdq1], [dVdq2], [dVdq3]]) 
+        [Htemp1.at[0].get()],
+        [Htemp2.at[0].get()],
+        [Htemp3.at[0].get()]
+    ]) + dVdq# jnp.array([[dVdq1], [dVdq2], [dVdq3]]) 
 
 
     # print('dHdq', dHdq)
 
-    dHdp = 0.5*jnp.block([
-    [jnp.transpose(p0)@linalg.solve(Mq,jnp.array([[1.],[0.],[0.]])) + (jnp.array([1.,0.,0.])@linalg.solve(Mq,p0))],
-    [jnp.transpose(p0)@linalg.solve(Mq,jnp.array([[0.],[1.],[0.]])) + (jnp.array([0.,1.,0.])@linalg.solve(Mq,p0))],
-    [jnp.transpose(p0)@linalg.solve(Mq,jnp.array([[0.],[0.],[1.]])) + (jnp.array([0.,0.,1.])@linalg.solve(Mq,p0))],
-    ]) 
+    # dHdp = 0.5*jnp.block([      #this might be fucked
+    # [jnp.transpose(p0)@linalg.solve(Mq,jnp.array([[1.],[0.],[0.]])) + (jnp.array([1.,0.,0.])@linalg.solve(Mq,p0))],
+    # [jnp.transpose(p0)@linalg.solve(Mq,jnp.array([[0.],[1.],[0.]])) + (jnp.array([0.,1.,0.])@linalg.solve(Mq,p0))],
+    # [jnp.transpose(p0)@linalg.solve(Mq,jnp.array([[0.],[0.],[1.]])) + (jnp.array([0.,0.,1.])@linalg.solve(Mq,p0))],
+    # ]) 
 
-
-    gq_hat = jnp.array([gq.at[1].get(), #might need to check this
-                        gq.at[3].get(),
-                        gq.at[5].get(),])
-
-    u = controlAction + gravComp*gq_hat         #multiply by the boolean to change
-    tau = jnp.block([[jnp.zeros((3,1))],[u]])
+    dHdp = linalg.solve(Mq,p0)          #this should be it
+    # print('dHdp', dHdp)
+      #multiply by the boolean to change
+    tau = jnp.block([[jnp.zeros((3,1))],[v]])
 
     xdot = jnp.block([
         [jnp.zeros((3,3)), jnp.eye(3)],
