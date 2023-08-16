@@ -138,19 +138,19 @@ class TorqueExample:
         # Place arm straight up
         for joint_id in range(self.actuator_count):
             # print('jointid',joint_id)
-            if (joint_id == 1):         #use this to set positions of interest
+            if (joint_id == 5):         #use this to set positions of interest
                 joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
                 joint_angle.joint_identifier = joint_id
-                joint_angle.value = 55
+                joint_angle.value = 90
             else:
-                if (joint_id == 3):         #use this to set positions of interest
-                    joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
-                    joint_angle.joint_identifier = joint_id
-                    joint_angle.value = 25 + 90
-                else:
-                    joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
-                    joint_angle.joint_identifier = joint_id
-                    joint_angle.value = 0
+                # if (joint_id == 3):         #use this to set positions of interest
+                #     joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
+                #     joint_angle.joint_identifier = joint_id
+                #     joint_angle.value = 25 + 90
+                # else:
+                joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
+                joint_angle.joint_identifier = joint_id
+                joint_angle.value = 0
 
 
 
@@ -232,6 +232,8 @@ class TorqueExample:
         self.userControl = jnp.zeros((3,l))
         self.controlHist = jnp.zeros((3,l))
         self.timeStore = jnp.zeros(l)
+        self.torquestorage = jnp.zeros((3,l))
+        # print('torque marix size', jnp.shape(self.torquestorage))
 
         
         trucated_t = jnp.arange(0,(t_end-2.),sampling_time_cyclic)      #this is used as a safety. Last 2 seconds will have 0 torques
@@ -245,12 +247,12 @@ class TorqueExample:
             return True
 
         # Move to Home position first
-        if not self.MoveToHomePosition():
-            return False
+        # if not self.MoveToHomePosition():
+            # return False
 
         # Move to initial conditions
-        # if not self.set_initial_position():
-            # return False
+        if not self.set_initial_position():
+            return False
 
         print("Init Cyclic")
         sys.stdout.flush()
@@ -303,7 +305,7 @@ class TorqueExample:
             control_mode_message.control_mode = ActuatorConfig_pb2.ControlMode.Value('TORQUE')
             device_id = 6  # first actuator as id = 1, last is id = 7
 
-            self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
+            # self.SendCallWithRetry(self.actuator_config.SetControlMode, 3, control_mode_message, device_id)
 
             # Init cyclic thread
             self.cyclic_t_end = t_end
@@ -324,7 +326,8 @@ class TorqueExample:
         stats_count = 0  # Counts stats prints
         failed_cyclic_count = 0  # Count communication timeouts
 
-
+        torque = self.torquestorage
+        gravcomptorque = self.controlHist
         #define sinusoide amplitudes, freqs
 
         q_bold1 = (pi/180.)*self.base_feedback.actuators[0].position
@@ -393,19 +396,19 @@ class TorqueExample:
                 u2 = gq2 
                 u3 = gq3 
                 # print('u1',u1)
-                print('New Measurement')
-                print('q', q)
+                # print('New Measurement')
+                # print('q', q)
                 print('Command Torques',u1,u2,u3)
-                init_second_torque = self.base_feedback.actuators[1].torque
-                init_fourth_torque = self.base_feedback.actuators[3].torque  
-                init_sixth_torque = self.base_feedback.actuators[5].torque
+                second_torque = self.base_feedback.actuators[1].torque
+                fourth_torque = self.base_feedback.actuators[3].torque  
+                sixth_torque = self.base_feedback.actuators[5].torque
 
-                print('Measured Torque',init_second_torque,init_fourth_torque,init_sixth_torque)
+                print('Measured Torque',second_torque,fourth_torque,sixth_torque)
                 self.base_command.actuators[1].torque_joint = u1.tolist()
                 # Grav comp is sent to fourth actuator
                 self.base_command.actuators[3].torque_joint = u2.tolist()
                 # Grav comp is sent to sixth actuator
-                self.base_command.actuators[5].torque_joint = 0#u3.tolist()
+                self.base_command.actuators[5].torque_joint = u3.tolist()
 
                 # self.base_command.actuators[5].torque_joint = 0
                 # self.base_command.actuators[5].torque_joint = -self.base_feedback.actuators[5].torque
@@ -423,8 +426,11 @@ class TorqueExample:
                     failed_cyclic_count = failed_cyclic_count + 1
                 cyclic_count = cyclic_count + 1
 
+                torque[:,[counter]] = jnp.array([[second_torque],[fourth_torque],[sixth_torque]])
+                gravcomptorque[:,[counter]] = jnp.array([[gq1],[gq2],[gq3]])
                 
                 counter = counter + 1       #index
+                
 
             # Stats Print
             if print_stats and ((t_now - t_stats) > 1):
@@ -438,6 +444,20 @@ class TorqueExample:
             if self.cyclic_t_end != 0 and (t_now - t_init > self.cyclic_t_end):
                 print("Cyclic Finished")
                 sys.stdout.flush()
+                print('T Duration', self.cyclic_t_end)
+                print('Configuration',q)
+                # print('Shape torque', (torque))
+                torque_cut = torque[:,0:counter]
+                torque1 = jnp.average(torque_cut,axis=1)
+                # torque2 = jnp.average(torque,axis=2)
+                # torque3 = jnp.average(torque,axis=3)
+                print('Average Torque', torque1)
+                gravcomptorque_cut = gravcomptorque[:,0:counter]
+                comp1 = jnp.average(gravcomptorque_cut,axis=1)
+                # comp2 = jnp.average(gravcomptorque[1,:])
+                # comp3 = jnp.average(gravcomptorque[2,:])
+                print('Average Comp Torque',comp1)
+
                 break
         self.cyclic_running = False
         return True
@@ -552,7 +572,7 @@ def main():
 
             example = TorqueExample(router, router_real_time)
             args.cyclic_time = 0.005
-            args.duration = 60
+            args.duration = 20
             example.InitStorage(args.cyclic_time, args.duration)
             success = example.InitCyclic(args.cyclic_time, args.duration, args.print_stats)
 

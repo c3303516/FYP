@@ -125,9 +125,9 @@ def massMatrix_continuous(q_hat,qconstants):
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
     q6 = q_bold.at[4].get()
-    q2 = q_bold.at[5].get()
+    q4 = q_bold.at[5].get()
 
-    q4 = q_hat.at[0].get()          #CHANGE
+    q2 = q_hat.at[0].get()          #CHANGE
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
     # print('q1',q1)
@@ -345,9 +345,9 @@ def MqPrime(q_hat,constants):
     Mq = massMatrix_continuous(q_hat,constants)
     holo = jnp.array([      #CHANGE
         [0.],
-        [0.],
-        [0.],
         [1.],
+        [0.],
+        [0.],
         [0.],
         [0.],
         [0.],
@@ -426,9 +426,9 @@ def Vq(q_hat, qconstants):
     q5 = q_bold.at[2].get()
     q7 = q_bold.at[3].get()
     q6 = q_bold.at[4].get()
-    q2 = q_bold.at[5].get()
+    q4 = q_bold.at[5].get()
 
-    q4 = q_hat.at[0].get()      #CHANGE
+    q2 = q_hat.at[0].get()      #CHANGE
     # q4 = q_hat.at[1].get()
     # q6 = q_hat.at[2].get()
 
@@ -603,7 +603,7 @@ def control(x_err,Tq,Cq,Kp,Kd,alpha,gravComp):
 
 ################ IMPORT REAL DATA ######################
 #CHANGE
-data = pd.read_csv("7LINK_IMPLEMENTATION/data/sinusoid_inverted_v2",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
+data = pd.read_csv("7LINK_IMPLEMENTATION/data/sinusoid_inverted_v1",sep=",",header=None, skiprows=3)       #last inputs go past the details of the csv.
 print(data.head())      #prints first 5 rows. tail() prints last 5
 
 data_array = data.to_numpy()
@@ -628,8 +628,8 @@ controlHist = jnp.transpose(controlHistT)
 # print(jnp.shape(velHist))
 # print(jnp.shape(controlHist))
 
-qHist = q7Hist[[3],:]         #this will only be the actuator we care about.        ############# CHANGE THIS
-velHist = vel3Hist[[1],:]     # vel is 3            #CHANGE
+qHist = q7Hist[[1],:]         #this will only be the actuator we care about.        ############# CHANGE THIS
+velHist = vel3Hist[[0],:]     # vel is 3            #CHANGE
 
 print('size qhist', jnp.shape(qHist))
 
@@ -653,9 +653,9 @@ s.constants = constants         #for holonomic transform
 
 holonomicTransform = jnp.array([            #CHANGE
         [0.],
-        [0.],         #only actuator we car about? might have to reduce the rows. write this out.
+        [1.],         #only actuator we car about? might have to reduce the rows. write this out.
         [0.],
-        [1.],
+        [0.],
         [0.],
         [0.],
         [0.],
@@ -763,7 +763,7 @@ def simulation(x_init,controlHist,t,dt,dampingParam):
         dt_instant = dt.at[:,k].get()
         print('dt',dt_instant)
 
-        v = controlHist.at[[1],[k]].get()     #extract control applied to the robot, REMEMBER TO CHANGE TO ACTUATOR #CHANGE
+        v = controlHist.at[[0],[k]].get()     #extract control applied to the robot, REMEMBER TO CHANGE TO ACTUATOR #CHANGE
         # print('shape v',jnp.shape(v))
         x = x_sim.at[:,[k]].get()
         # q = jnp.array([[x.at[0,0].get()],
@@ -856,7 +856,7 @@ print('Saving Data')
 details = ['Damping Parameter:', dampingParamOpt]
 # values = ['Amp/Freqs: v1',self.a1,self.f1,'v2',self.a2,self.f2,'v3',self.a3,self.f3]
 # header = ['Time', 'State History']
-with open('SYSTEM_IDENTIFICATION/data/dampingParameter2_massmatrixfixed', 'w', newline='') as f:  #CHANGE
+with open('SYSTEM_IDENTIFICATION/data/dampingParameter1_massmatrixfixed', 'w', newline='') as f:  #CHANGE
 
     writer = csv.writer(f)
     # writer.writerow(simtype)

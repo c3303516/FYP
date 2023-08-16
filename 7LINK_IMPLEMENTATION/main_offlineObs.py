@@ -865,19 +865,7 @@ substeps = 1
 # t = jnp.arange(0,T,dt)
 
 
-#Define Friction
-# # D_obs = jnp.array([67.,67.,40])@jnp.eye(3)
-# D_obs = jnp.array([
-#     [67., 0., 0.],
-#     [0., 67., 0.],
-#     [0., 0., 40.],
-# ])
-D_obs = jnp.array([
-    [13., 0., 0.],
-    [0., 13., 0.],
-    [0., 0., 13.],
-])
-D_obs = 0.*jnp.eye(n) 
+D_obs = 41.9445*jnp.eye(n) 
 print('Dobs', D_obs)
 # D_obs = jnp.array([67.12255859375, 67.12255859375, 67.12255859375])@jnp.eye(n)
                         #^ as determined from optimisation. Need to run opt for 3 though. 2nd is assumed same as 1st.
@@ -1047,7 +1035,7 @@ for k in range(l):
 ############### outputting to csv file#####################
 # ############### outputting to csv file#####################
 # details = ['Grav Comp', gravComp, 'dT', dt, 'Substep Number', substeps]
-details = ['Running test for offline observer.THis does not wrap around. This uses the new mass matrix stuff']
+details = ['Running test for offline observer.THis does not wrap around. This uses the new mass matrix stuff. damping param of 41.9445']
 file = [filestring]
 # controlConstants = ['Control',controlActive,'Kp',Kp,'Kd',Kd,'alpha',alpha]
 
@@ -1055,7 +1043,7 @@ observerInfo = [ 'Kappa',kappa]
 header = ['Time', 'State History']
 
 t2 = t.at[0,:].get()        #to prevent the [] in the data
-with open('/root/FYP/7LINK_IMPLEMENTATION/data/final_offline_v1_3_mmtest', 'w', newline='') as f:
+with open('/root/FYP/7LINK_IMPLEMENTATION/data/offlineObserver_v1', 'w', newline='') as f:
 
     writer = csv.writer(f)
     # writer.writerow(simtype)
